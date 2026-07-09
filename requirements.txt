@@ -7,3 +7,4 @@ requests
 streamlit-autorefresh
 supabase
 midtransclient
+streamlit-cookies-manager
