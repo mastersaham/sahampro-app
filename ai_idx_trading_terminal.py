@@ -603,6 +603,7 @@ def get_general_market_news(max_items_per_query=5):
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&display=swap');
 
     html, body, [class*="css"] { font-family: 'Poppins', sans-serif; }
 
@@ -701,25 +702,57 @@ st.markdown("""
         text-align: center;
     }
     .orange-topbar-title {
-        font-size: 30px;
+        font-family: 'Baloo 2', 'Poppins', sans-serif;
+        font-size: 32px;
         font-weight: 800;
-        color: #ffd400;
+        color: #ff9d2e;
         margin-top: 10px;
         letter-spacing: 0.3px;
         line-height: 1.25;
         display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 10px;
+        /* efek "timbul"/bubble -- beberapa lapis text-shadow oranye tua
+           digeser diagonal, ditambah stroke tipis, biar hurufnya kelihatan
+           tebal & menggembung kayak balon, bukan tulisan datar. */
+        text-shadow:
+            1px 1px 0 #d97300,
+            2px 2px 0 #d97300,
+            3px 3px 0 #b35f00,
+            4px 5px 10px rgba(0,0,0,0.35);
+        -webkit-text-stroke: 1.4px #b35f00;
     }
     .orange-topbar-rocket {
-        fill: #ffd400;
         flex-shrink: 0;
+        width: 32px;
+        height: 35px;
+        filter:
+            drop-shadow(1px 1px 0 #c96700)
+            drop-shadow(2px 2px 0 #a65500)
+            drop-shadow(0 3px 5px rgba(0,0,0,0.35));
+    }
+    .orange-topbar-rocket .rocket-body {
+        fill: #ff9d2e;
+    }
+    .orange-topbar-rocket .rocket-window {
+        fill: #7a3d00;
+    }
+    .orange-topbar-rocket .rocket-flame {
+        fill: #ffc266;
+        transform-origin: 12px 20.5px;
+        animation: rocket-logo-flame-flicker 0.4s ease-in-out infinite;
     }
     .orange-topbar-sub {
         font-size: 14px;
         color: #a9a7c4;
         margin-top: 8px;
     }
+    /* ---- versi BESAR: khusus halaman Masuk/Daftar/Lupa Password
+       (dipasang lewat class tambahan "orange-topbar--lg" cuma kalau user
+       belum login) -- bentuk logo sama persis, cuma skalanya lebih besar. */
+    .orange-topbar--lg .orange-topbar-title { font-size: 52px; gap: 16px; }
+    .orange-topbar--lg .orange-topbar-rocket { width: 54px; height: 58px; }
+    .orange-topbar--lg .orange-topbar-sub { font-size: 16px; }
 
     .terminal-header {
         display: flex;
@@ -1002,6 +1035,98 @@ st.markdown("""
     .st-key-auth_panel .stTextInput input::placeholder { color: #b07a45; }
     .st-key-auth_panel label { color: #4a2400 !important; font-weight: 600 !important; font-size: 13px !important; }
 
+    /* PERBAIKAN: ikon mata (show/hide password) bawaan Streamlit warnanya
+       putih/terang mengikuti tema default -- kelihatan jelas dulu waktu
+       background kotak password masih gelap, tapi sekarang kotaknya
+       terang (rgba(255,255,255,0.85) di atas) jadi ikon putih itu nyaru.
+       Paksa jadi abu-abu gelap supaya tetap kelihatan di atas background
+       terang. Selector dibuat agak lebar (button svg & path di dalam
+       stTextInput) biar tetap kena walau markup ikon berubah versi. */
+    .st-key-auth_panel .stTextInput button svg,
+    .st-key-auth_panel .stTextInput button svg path {
+        fill: #6b6b6b !important;
+        color: #6b6b6b !important;
+        opacity: 1 !important;
+    }
+    .st-key-auth_panel .stTextInput button:hover svg,
+    .st-key-auth_panel .stTextInput button:hover svg path {
+        fill: #3a3a3a !important;
+        color: #3a3a3a !important;
+    }
+
+    /* ---------------------------------------------------------
+       LOADING SCREEN — tampil sebentar sesudah login berhasil,
+       menggantikan "flash" kartu login lama yang sempat nyangkut
+       selagi dashboard disiapkan (lihat komentar di dekat pemakaian
+       st.session_state["just_logged_in"]).
+    --------------------------------------------------------- */
+    .launch-loading-overlay {
+        position: fixed;
+        inset: 0;
+        background: #05050a;
+        z-index: 999999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+    .launch-rocket-wrap {
+        position: relative;
+        width: 140px;
+        height: 170px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    .launch-rocket {
+        font-size: 76px;
+        line-height: 1;
+        transform: rotate(-8deg);
+        animation: launch-rocket-wobble 1.1s ease-in-out infinite;
+        filter: drop-shadow(0 0 20px rgba(255,170,60,0.55));
+    }
+    .launch-flame {
+        position: absolute;
+        bottom: 26px;
+        left: 50%;
+        width: 20px;
+        height: 42px;
+        transform: translateX(2px) rotate(-8deg);
+        transform-origin: top center;
+        background: linear-gradient(180deg, #fff59d 0%, #ffb347 45%, #ff6a00 80%, transparent 100%);
+        border-radius: 50% 50% 60% 60%;
+        filter: blur(1.5px);
+        animation: launch-flame-flicker 0.32s ease-in-out infinite;
+    }
+    .launch-text {
+        margin-top: 24px;
+        color: #ffb35a;
+        font-weight: 700;
+        font-size: 15px;
+        letter-spacing: 0.3px;
+    }
+    .launch-dots {
+        display: inline-block;
+        animation: launch-dots-blink 1.2s steps(1) infinite;
+    }
+    @keyframes launch-rocket-wobble {
+        0%, 100% { transform: rotate(-8deg) translateY(0px); }
+        50% { transform: rotate(-4deg) translateY(-12px); }
+    }
+    @keyframes launch-flame-flicker {
+        0%, 100% { transform: translateX(2px) rotate(-8deg) scaleY(1) scaleX(1); opacity: 0.9; }
+        50% { transform: translateX(2px) rotate(-8deg) scaleY(1.35) scaleX(0.8); opacity: 0.55; }
+    }
+    @keyframes launch-dots-blink {
+        0%, 20% { opacity: 0; }
+        50% { opacity: 1; }
+        100% { opacity: 0; }
+    }
+    @keyframes rocket-logo-flame-flicker {
+        0%, 100% { transform: scale(1); opacity: 0.9; }
+        50% { transform: scale(1.25, 0.85); opacity: 0.55; }
+    }
+
     /* di HP/tablet portrait: kolom form full lebar, stack ke bawah (bawaan Streamlit) */
     /* di desktop/tablet landscape (>640px): field disejajarkan kiri-kanan */
     @media (max-width: 640px) {
@@ -1075,12 +1200,48 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="orange-topbar">
+# ---- Tentukan identitas user yang sedang login (kalau ada) -- dihitung
+#      DI SINI (sebelum topbar RITEL SYARIAH) supaya ukuran logo bisa
+#      otomatis menyesuaikan: besar di halaman Masuk/Daftar (belum login),
+#      ukuran biasa begitu sudah masuk Dashboard. ----
+identifier = st.session_state.get("auth_identifier")
+display_name = st.session_state.get("auth_display_name", identifier)
+
+if not identifier and not st.session_state.pop("skip_cookie_restore", False):
+    # Belum ada sesi di session_state (misal karena tab baru / reload) —
+    # coba pulihkan otomatis dari cookie sebelum minta login ulang.
+    #
+    # CATATAN: flag "skip_cookie_restore" dicek di sini untuk menghindari
+    # race condition saat logout. EncryptedCookieManager menghapus cookie
+    # lewat komponen JS yang butuh 1 siklus komunikasi browser<->server;
+    # kalau kita langsung st.rerun() setelah clear_login_cookie(), rerun
+    # itu bisa kejadian SEBELUM cookie beneran terhapus di browser, jadi
+    # tanpa flag ini user akan otomatis ke-login lagi dari cookie lama.
+    _user_db_for_cookie_check = load_user_db()
+    _uname_from_cookie = load_login_cookie(_user_db_for_cookie_check)
+    if _uname_from_cookie:
+        identifier = f"user:{_uname_from_cookie}"
+        display_name = _uname_from_cookie
+        st.session_state["auth_identifier"] = identifier
+        st.session_state["auth_display_name"] = display_name
+
+# ---- Logo "RITEL SYARIAH": roket dimiringkan 45 derajat + api di ekornya
+# (warna sama, oranye), tulisan bergaya bubble/timbul. Class modifier
+# "orange-topbar--lg" HANYA dipasang kalau user BELUM login (halaman
+# Masuk/Daftar/Lupa Password) supaya logo tampil lebih besar di sana;
+# begitu sudah login (Dashboard & semua halaman lain) ukurannya balik ke
+# ukuran biasa -- tapi bentuk/style logonya (roket miring+api+bubble)
+# tetap sama persis, cuma beda besaran.
+_topbar_size_cls = "" if identifier else "orange-topbar--lg"
+st.markdown(f"""
+<div class="orange-topbar {_topbar_size_cls}">
     <div class="orange-topbar-title">
-        <svg class="orange-topbar-rocket" viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C9 5 7 9 7 13c0 1.5.5 3 1.5 4L7 21l3-1.5L12 21l2-1.5L17 21l-1.5-4c1-1 1.5-2.5 1.5-4 0-4-2-8-5-11z"/>
-            <circle cx="12" cy="11" r="1.4" fill="#0b0c16"/>
+        <svg class="orange-topbar-rocket" viewBox="0 0 24 26" xmlns="http://www.w3.org/2000/svg">
+            <g transform="rotate(45 12 13)">
+                <path class="rocket-flame" d="M12 20.5c-1.7 1.1-2.4 2.9-1.7 4.6.5-.7 1.1-1.1 1.7-1.1s1.2.4 1.7 1.1c.7-1.7 0-3.5-1.7-4.6z"/>
+                <path class="rocket-body" d="M12 2C9 5 7 9 7 13c0 1.5.5 3 1.5 4L7 21l3-1.5L12 21l2-1.5L17 21l-1.5-4c1-1 1.5-2.5 1.5-4 0-4-2-8-5-11z"/>
+                <circle class="rocket-window" cx="12" cy="11" r="1.4"/>
+            </g>
         </svg>
         RITEL SYARIAH
     </div>
@@ -1269,6 +1430,7 @@ def render_auth_panel(user_db):
                     else:
                         st.session_state["auth_identifier"] = f"user:{uname}"
                         st.session_state["auth_display_name"] = uname
+                        st.session_state["just_logged_in"] = True
                         save_login_cookie(uname)
                         st.rerun()
 
@@ -1423,31 +1585,45 @@ if _reset_token_param and _reset_uname_param:
     st.stop()
 
 
-# ---- Tentukan identitas user yang sedang login (kalau ada) ----
-identifier = st.session_state.get("auth_identifier")
-display_name = st.session_state.get("auth_display_name", identifier)
-
-if not identifier and not st.session_state.pop("skip_cookie_restore", False):
-    # Belum ada sesi di session_state (misal karena tab baru / reload) —
-    # coba pulihkan otomatis dari cookie sebelum minta login ulang.
-    #
-    # CATATAN: flag "skip_cookie_restore" dicek di sini untuk menghindari
-    # race condition saat logout. EncryptedCookieManager menghapus cookie
-    # lewat komponen JS yang butuh 1 siklus komunikasi browser<->server;
-    # kalau kita langsung st.rerun() setelah clear_login_cookie(), rerun
-    # itu bisa kejadian SEBELUM cookie beneran terhapus di browser, jadi
-    # tanpa flag ini user akan otomatis ke-login lagi dari cookie lama.
-    _user_db_for_cookie_check = load_user_db()
-    _uname_from_cookie = load_login_cookie(_user_db_for_cookie_check)
-    if _uname_from_cookie:
-        identifier = f"user:{_uname_from_cookie}"
-        display_name = _uname_from_cookie
-        st.session_state["auth_identifier"] = identifier
-        st.session_state["auth_display_name"] = display_name
-
+# ---- Identitas user (identifier/display_name) sudah dihitung lebih awal
+#      di atas -- sebelum topbar RITEL SYARIAH dirender -- supaya ukuran
+#      logo bisa otomatis menyesuaikan status login (besar di halaman
+#      Masuk/Daftar, ukuran biasa begitu sudah di Dashboard). Di sini
+#      tinggal dipakai buat gerbang: kalau belum login, tampilkan panel
+#      auth dan berhenti.
 if not identifier:
     render_auth_panel(load_user_db())
     st.stop()
+
+# ---- Baru saja berhasil login lewat tab "Masuk": jangan langsung lanjut
+# render dashboard (yang butuh load_user_db/status langganan/supabase dll
+# di bawah ini -- beberapa saat) karena itu yang bikin kartu login lama
+# kelihatan "nyangkut" sebentar sebelum benar-benar hilang (Streamlit baru
+# beneran bersihin elemen lama setelah SELURUH script kelar jalan).
+#
+# Solusinya: tampilkan overlay LOADING full-layar (background hitam +
+# roket miring animasi) di sini dulu. Overlay ini position:fixed nutupin
+# SELURUH viewport dengan z-index tinggi, jadi walau ada elemen lama yang
+# belum sempat kehapus di baliknya, user tetap cuma lihat layar loading --
+# bukan kartu login "nyangkut". Begitu overlay ini di-clear (lewat
+# st.empty()), baru lanjut render dashboard beneran.
+if st.session_state.pop("just_logged_in", False):
+    _loading_ph = st.empty()
+    with _loading_ph.container():
+        st.markdown(
+            """
+            <div class="launch-loading-overlay">
+                <div class="launch-rocket-wrap">
+                    <div class="launch-rocket">🚀</div>
+                    <div class="launch-flame"></div>
+                </div>
+                <div class="launch-text">Menyiapkan dashboard<span class="launch-dots">...</span></div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    time.sleep(1.4)
+    _loading_ph.empty()
 
 # ---- User sudah punya identitas, cek status langganan ----
 user_db = load_user_db()
