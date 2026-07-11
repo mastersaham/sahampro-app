@@ -700,58 +700,25 @@ st.markdown("""
         overflow: visible;
         text-align: center;
     }
-    .orange-topbar-badge {
-        display: inline-flex;
-        align-items: center;
-        gap: 7px;
-        font-size: 12px;
-        font-weight: 700;
-        letter-spacing: 2.5px;
-        text-transform: uppercase;
-        color: #ffb35a;
-        background: rgba(255,179,90,0.10);
-        border: 1px solid rgba(255,179,90,0.28);
-        padding: 6px 18px;
-        border-radius: 50px;
-    }
-    .orange-topbar-badge-dot {
-        height: 6px; width: 6px; border-radius: 50%;
-        background: #ffb35a;
-        box-shadow: 0 0 8px #ffb35a;
-        animation: pulse 1.5s ease-in-out infinite;
-    }
     .orange-topbar-title {
         font-size: 30px;
         font-weight: 800;
-        color: #ffffff;
-        margin-top: 16px;
+        color: #ffd400;
+        margin-top: 10px;
         letter-spacing: 0.3px;
         line-height: 1.25;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
     }
-    .orange-topbar-pro-chip {
-        display: inline-block;
-        font-size: 12px;
-        font-weight: 800;
-        background: linear-gradient(135deg, #ffc25c, #ff8a1f);
-        color: #241300;
-        padding: 2px 12px;
-        border-radius: 20px;
-        vertical-align: middle;
-        margin-left: 8px;
-        box-shadow: 0 8px 16px -6px rgba(255,140,20,0.6);
+    .orange-topbar-rocket {
+        fill: #ffd400;
+        flex-shrink: 0;
     }
     .orange-topbar-sub {
         font-size: 14px;
         color: #a9a7c4;
         margin-top: 8px;
-    }
-    .orange-topbar-divider {
-        width: 64px;
-        height: 3px;
-        border-radius: 3px;
-        margin: 18px auto 0 auto;
-        background: linear-gradient(90deg, transparent, #ffb35a, transparent);
-        opacity: 0.7;
     }
 
     .terminal-header {
@@ -848,11 +815,23 @@ st.markdown("""
         position: sticky;
         top: 0;
         z-index: 999;
-        background: rgba(11,12,22,0.92);
+        background: linear-gradient(135deg, #ffe27a, #ffc700);
         backdrop-filter: blur(6px);
         padding: 10px 4px 6px 4px;
         margin: -10px -4px 10px -4px;
-        border-bottom: 1px solid rgba(255,179,90,0.20);
+        border-bottom: 1px solid rgba(120,90,0,0.25);
+        border-radius: 0 0 18px 18px;
+    }
+    /* Tombol home di dalam card kuning header -- dibikin transparan +
+       beda gaya dari tombol aksi oranye lain, biar nyatu sama warna card. */
+    .st-key-header_status_bar div.stButton > button {
+        background: rgba(255,255,255,0.35);
+        color: #3a2900;
+        box-shadow: none;
+    }
+    .st-key-header_status_bar div.stButton > button:hover {
+        background: rgba(255,255,255,0.55);
+        transform: translateY(-1px);
     }
 
     .badge-buy { background: rgba(0,224,140,0.15); color: #00e08c; }
@@ -1098,14 +1077,14 @@ st.markdown("""
 
 st.markdown("""
 <div class="orange-topbar">
-    <div class="orange-topbar-badge">
-        <span class="orange-topbar-badge-dot"></span> RITEL SYARIAH
-    </div>
     <div class="orange-topbar-title">
-        🚀📈 RITEL SYARIAH <span class="orange-topbar-pro-chip">PRO</span>
+        <svg class="orange-topbar-rocket" viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C9 5 7 9 7 13c0 1.5.5 3 1.5 4L7 21l3-1.5L12 21l2-1.5L17 21l-1.5-4c1-1 1.5-2.5 1.5-4 0-4-2-8-5-11z"/>
+            <circle cx="12" cy="11" r="1.4" fill="#0b0c16"/>
+        </svg>
+        RITEL SYARIAH
     </div>
     <div class="orange-topbar-sub">Khusus saham syariah, semoga berkah</div>
-    <div class="orange-topbar-divider"></div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1480,20 +1459,37 @@ status = get_user_status(identifier, user_db)
 # guard di bawah), jadi app utama tetap jalan normal tanpa error.
 supabase_client = get_supabase_client()
 
+def _go_to_dashboard():
+    """Reset semua state navigasi & query param, balik lurus ke Dashboard
+    utama -- dipakai tombol logo rumah (home) di header."""
+    st.query_params.clear()
+    st.session_state["show_portfolio"] = False
+    st.session_state["show_customer_panel"] = False
+    st.session_state["active_panel"] = None
+    st.rerun()
+
+
 with st.container(key="header_status_bar"):
     if status in ("owner", "active") and supabase_client:
-        col_status, col_notif, col_portfolio = st.columns([3.6, 0.6, 1.3])
+        col_home, col_status, col_notif, col_portfolio = st.columns([0.5, 3.3, 0.6, 1.3])
     else:
-        col_status, col_portfolio = st.columns([4, 1.3])
+        col_home, col_status, col_portfolio = st.columns([0.5, 3.7, 1.3])
         col_notif = None
+
+    with col_home:
+        if st.button("🏠", key="home_btn", use_container_width=True, help="Kembali ke Dashboard"):
+            _go_to_dashboard()
 
     # ---- Nama profil = trigger dropdown (popover) berisi Privasi Akun
     # & Logout, biar gak makan tempat sebagai tombol terpisah-pisah di
-    # header. Label tombolnya sendiri sudah nunjukkin status + nama. ----
+    # header. Label tombolnya sendiri sudah nunjukkin status + nama.
+    # Badge centang biru (gaya "verified" media sosial) ditaruh di KANAN
+    # nama, buat owner & pelanggan aktif -- mahkota (owner) tetap di kiri. ----
+    _verified_badge = ":blue[✔️]"
     if status == "owner":
-        _profile_label = f"👑 {display_name}"
+        _profile_label = f"👑 {display_name} {_verified_badge}"
     elif status == "active":
-        _profile_label = f"✅ {display_name}"
+        _profile_label = f"{display_name} {_verified_badge}"
     else:
         _profile_label = f"❌ {display_name}"
 
@@ -1904,7 +1900,7 @@ def render_html_table(df):
             if col == "stock":
                 # Nama saham diklik -> pindah ke halaman detail saham itu
                 # (lihat render_stock_detail_page), lewat query param URL.
-                cells += f'<td><a class="stock-link" href="?stock={row[col]}">{row[col]}</a></td>'
+                cells += f'<td><a class="stock-link" href="?stock={row[col]}" target="_self">{row[col]}</a></td>'
             elif col == "score":
                 cells += f'<td>{score_badge(row[col])}</td>'
             elif col == "signal":
@@ -2389,23 +2385,33 @@ def build_full_scan():
 
 
 # ============================================================
-#  HEADER — search bar cari saham
+#  HEADER — search bar cari saham (dipanggil ulang di SETIAP halaman:
+#  Dashboard, Portofolio, Kelola Pelanggan, dan semua panel fitur
+#  seperti Scan Market/Bandar/Breakout/dll -- bukan cuma di Dashboard)
 # ============================================================
-with st.form("dashboard_search_form", clear_on_submit=False):
-    _search_col1, _search_col2 = st.columns([6, 1])
-    with _search_col1:
-        _search_query = st.text_input(
-            "Cari saham",
-            placeholder="Cari kode saham, mis. BBCA",
-            label_visibility="collapsed",
-            key="dashboard_stock_search",
-        )
-    with _search_col2:
-        _search_submitted = st.form_submit_button("🔍", use_container_width=True)
+def render_stock_search_bar(form_key):
+    with st.form(form_key, clear_on_submit=False):
+        _search_col1, _search_col2 = st.columns([6, 1])
+        with _search_col1:
+            _query = st.text_input(
+                "Cari saham",
+                placeholder="Cari kode saham, mis. BBCA",
+                label_visibility="collapsed",
+                key=f"{form_key}_input",
+            )
+        with _search_col2:
+            _submitted = st.form_submit_button("🔍", use_container_width=True)
+    if _submitted and _query.strip():
+        st.query_params["stock"] = _query.strip().upper()
+        st.rerun()
 
-if _search_submitted and _search_query.strip():
-    st.query_params["stock"] = _search_query.strip().upper()
-    st.rerun()
+
+# CATATAN: render_stock_search_bar("dashboard_search_form") TIDAK dipanggil
+# di sini lagi -- sekarang search bar cuma tampil di halaman Dashboard
+# (lihat blok "if st.session_state.active_panel is None" di bawah) dan di
+# halaman Detail Saham (render_stock_detail_page). Halaman Portofolio,
+# Kelola Pelanggan, dan panel fitur (Scan/Bandar/dll) TIDAK lagi menampilkan
+# search bar.
 
 # ---- State awal ----
 if "scan_df" not in st.session_state:
@@ -2490,7 +2496,7 @@ def render_portfolio_page(user_db, identifier, display_name):
     ISSI, dan data dasar SAJA (harga + %harian) untuk saham non-syariah,
     tanpa sinyal/rekomendasi apa pun untuk yang non-syariah."""
     st.markdown(f"### 📌 Portofolio Saya — {display_name}")
-    if st.button("← Kembali ke Dashboard"):
+    if st.button("← Kembali"):
         st.session_state["show_portfolio"] = False
         st.rerun()
 
@@ -2568,7 +2574,7 @@ def render_portfolio_page(user_db, identifier, display_name):
         daily_txt = f"{daily:+.2f}%" if daily is not None else "–"
         rows_html.append(
             f'<tr class="{row_cls}">'
-            f'<td><a class="stock-link" href="?stock={ticker_jk}"><b>{code}</b></a></td>'
+            f'<td><a class="stock-link" href="?stock={ticker_jk}" target="_self"><b>{code}</b></a></td>'
             f'<td>{price}</td>'
             f'<td class="{daily_cls}">{daily_txt}</td>'
             f'<td class="{weekly_cls}">{weekly_txt}</td>'
@@ -2615,7 +2621,7 @@ def render_customer_panel(user_db):
     dipakai selama Stripe belum live / untuk koreksi manual selagi app
     belum dibuka ke umum."""
     st.markdown("### 🗂️ Kelola Pelanggan")
-    if st.button("← Kembali ke Dashboard", key="back_from_customer_panel"):
+    if st.button("← Kembali", key="back_from_customer_panel"):
         st.session_state["show_customer_panel"] = False
         st.rerun()
 
@@ -2884,9 +2890,16 @@ def render_stock_detail_page(ticker_raw):
     ticker_no_jk = str(ticker_raw).upper().strip().replace(".JK", "")
     ticker_jk = f"{ticker_no_jk}.JK"
 
-    if st.button("⬅ Kembali ke Dashboard"):
-        st.query_params.clear()
+    if st.button("⬅ Kembali"):
+        # Cuma hapus query param "?stock=..." -- state navigasi lain
+        # (show_portfolio/show_customer_panel/active_panel) SENGAJA
+        # dibiarkan apa adanya, supaya tombol ini balik ke halaman ASAL
+        # user klik saham tadi (Dashboard/Portofolio/Scan Market/dll),
+        # bukan selalu dipaksa balik ke Dashboard. Kalau mau langsung ke
+        # Dashboard dari halaman manapun, pakai logo 🏠 di header.
+        st.query_params.pop("stock", None)
         st.rerun()
+    render_stock_search_bar("stock_detail_search_form")
 
     df_scan = st.session_state.get("scan_df")
     scan_row = None
@@ -3269,7 +3282,7 @@ def render_top_panel():
         def _render_scroll_list(rows):
             items_html = "".join(
                 f'<div class="scroll-item">'
-                f'<a class="stock-link" href="?stock={_display_ticker(r["stock"])}">'
+                f'<a class="stock-link" href="?stock={_display_ticker(r["stock"])}" target="_self">'
                 f'{_display_ticker(r["stock"])}</a> — {r["price"]} '
                 f'<span class="{"gain-up" if r["change_pct"] >= 0 else "gain-down"}">'
                 f'({r["change_pct"]:+.2f}%)</span></div>'
@@ -3418,6 +3431,7 @@ MENU_ITEMS = [
 
 if st.session_state.active_panel is None:
     # ===================== HALAMAN: DASHBOARD =====================
+    render_stock_search_bar("dashboard_search_form")
     render_top_panel()
     st.divider()
 
@@ -3435,7 +3449,7 @@ if st.session_state.active_panel is None:
 else:
     # ===================== HALAMAN: FITUR =====================
     _panel = st.session_state.active_panel
-    if st.button("⬅ Kembali ke Dashboard", key="back_to_dashboard_btn"):
+    if st.button("⬅ Kembali", key="back_to_dashboard_btn"):
         st.session_state.active_panel = None
         st.rerun()
     st.divider()
@@ -3624,7 +3638,7 @@ else:
     # ---- Tombol kembali kedua di bawah, biar gak perlu scroll ke atas
     # lagi di halaman yang tabelnya panjang. ----
     st.divider()
-    if st.button("⬅ Kembali ke Dashboard", key="back_to_dashboard_btn_bottom"):
+    if st.button("⬅ Kembali", key="back_to_dashboard_btn_bottom"):
         st.session_state.active_panel = None
         st.rerun()
 
