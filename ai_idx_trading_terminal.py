@@ -37,9 +37,7 @@ st.set_page_config(
 # lagi, karena sistem login sekarang cuma username + password). Sesuaikan
 # daftar ini dengan username yang kamu pakai sendiri saat daftar di app.
 OWNER_USERNAMES = [
-    "hajiannugraha",
-    "hajianclashofclans",
-    "widya.nurulmustofa",
+    "dreamwarriorstudio",
 ]
 
 # File tempat menyimpan status langganan agar TIDAK hilang setiap kali
