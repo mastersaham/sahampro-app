@@ -1069,24 +1069,29 @@ st.markdown("""
         color: #ffd28a;
     }
 
-    /* Sembunyikan bar tab bawaan Streamlit di panel login — tab "Lupa
-       Password" tetap ada di DOM (supaya isinya tetap berfungsi) tapi
-       hanya bisa dipicu lewat link teks di bawah tombol "Masuk". */
-    .st-key-auth_panel div[data-baseweb="tab-list"] {
-        display: none;
-    }
-    .auth-forgot-link {
+    /* Tombol "Lupa Password?" dan "Kembali ke Masuk" ditampilkan sebagai
+       link teks kecil, bukan tombol besar. */
+    .st-key-btn_forgot button,
+    .st-key-btn_back_login button {
         display: block;
-        text-align: center;
-        margin-top: 14px;
-        font-size: 13.5px;
-        color: #ff8c00;
-        cursor: pointer;
+        margin: 10px auto 0 auto;
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+        color: #ff8c00 !important;
         text-decoration: underline;
         font-weight: 600;
+        font-size: 13.5px;
+        padding: 4px 0 !important;
     }
-    .auth-forgot-link:hover {
-        color: #ffa733;
+    .st-key-btn_forgot button:hover,
+    .st-key-btn_back_login button:hover {
+        color: #ffa733 !important;
+        transform: none !important;
+    }
+    .st-key-btn_back_login button {
+        margin: 0 0 12px 0;
+        text-align: left;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -1096,7 +1101,7 @@ st.markdown("""
     <div class="orange-topbar-title">
         SYARIAH SIGNAL
     </div>
-    <div class="orange-topbar-sub">Khusus saham syariah, semoga berkah</div>
+    <div class="orange-topbar-sub">Khusus Saham Syariah, Semoga Berkah</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1237,17 +1242,78 @@ def render_auth_panel(user_db):
     # Sekarang pakai st.container(key=...) asli, yang beneran membungkus
     # semua widget di dalam blok `with`-nya sebagai satu parent di DOM,
     # dan otomatis dapat CSS class ".st-key-<key>" yang stabil buat di-style.
+    #
+    # "Lupa Password" BUKAN tab ketiga lagi — itu tampilan terpisah yang
+    # dikontrol lewat st.session_state["auth_view"] ("login" / "forgot").
+    # Link HTML + JS onclick tidak bisa mengubah state Python di Streamlit,
+    # jadi trigger-nya pakai st.button asli (di-styling supaya terlihat
+    # seperti link teks kecil, lihat CSS ".st-key-btn_forgot/back_login").
+    st.session_state.setdefault("auth_view", "login")
+
     with st.container(key="auth_wrap"):
         st.markdown('<div class="auth-logo-badge">🔐</div>', unsafe_allow_html=True)
 
         with st.container(key="auth_panel"):
+            if st.session_state["auth_view"] == "forgot":
+                st.markdown('<div class="auth-title">Lupa Password</div>', unsafe_allow_html=True)
+
+                if st.button("← Kembali ke Masuk", key="btn_back_login", use_container_width=True):
+                    st.session_state["auth_view"] = "login"
+                    st.rerun()
+
+                st.markdown(
+                    '<div class="auth-caption">Masukkan username dan email yang '
+                    'terdaftar. Kalau akun kamu pelanggan aktif, link reset '
+                    'password akan dikirim ke email kamu.</div>',
+                    unsafe_allow_html=True,
+                )
+                with st.form("form_lupa_password", clear_on_submit=False):
+                    lupa_username = st.text_input("Username", key="lupa_username_input")
+                    lupa_email = st.text_input("Email terdaftar", key="lupa_email_input")
+                    submit_lupa = st.form_submit_button("Kirim Link Reset", use_container_width=True)
+
+                if submit_lupa:
+                    uname = lupa_username.strip().lower()
+                    email_input = lupa_email.strip().lower()
+                    key = f"user:{uname}"
+                    record = user_db.get(key)
+                    status_ok = get_user_status(key, user_db) in ("owner", "active")
+                    email_ok = bool(
+                        record and email_input
+                        and record.get("email", "").strip().lower() == email_input
+                    )
+
+                    if not uname or not email_input:
+                        st.error("Username dan email wajib diisi.")
+                    else:
+                        app_url = st.secrets.get("APP_URL", "")
+                        if record and email_ok and status_ok and app_url:
+                            token = generate_reset_token(user_db, key)
+                            reset_link = f"{app_url}/?reset_token={token}&u={uname}"
+                            sent, err = send_reset_password_email(record["email"], uname, reset_link)
+                            if not sent and uname in OWNER_USERNAMES:
+                                # Detail error cuma tampil ke akun Owner sendiri,
+                                # buat gampang debug konfigurasi Brevo/APP_URL —
+                                # tidak bocor ke user lain lewat pesan generik di bawah.
+                                st.error(f"[Owner debug] Email gagal terkirim: {err}")
+                        # Pesan SELALU sama persis apa pun hasilnya (username salah,
+                        # email tidak cocok, belum berlangganan aktif, dll) — supaya
+                        # orang tidak bisa menebak-nebak username/email pelanggan
+                        # aktif dari respons form ini (mencegah user enumeration).
+                        st.success(
+                            "Jika akun terdaftar, email cocok, dan berlangganan aktif, "
+                            "link reset password sudah dikirim. Cek juga folder "
+                            "Spam/Promosi kalau belum masuk."
+                        )
+                return
+
             st.markdown('<div class="auth-title">Masuk untuk Melanjutkan</div>', unsafe_allow_html=True)
             st.markdown(
                 '<div class="auth-caption">Belum punya akun? Daftar dulu</div>',
                 unsafe_allow_html=True,
             )
 
-            tab_masuk, tab_daftar, tab_lupa = st.tabs(["Masuk", "Daftar Baru", "Lupa Password"])
+            tab_masuk, tab_daftar = st.tabs(["Masuk", "Daftar Baru"])
 
             with tab_masuk:
                 with st.form("form_masuk_username", clear_on_submit=False):
@@ -1258,19 +1324,9 @@ def render_auth_panel(user_db):
                         login_password = st.text_input("Password", type="password", key="login_password_input")
                     submit_masuk = st.form_submit_button("Masuk", use_container_width=True)
 
-                st.markdown(
-                    """
-                    <div class="auth-forgot-link" onclick="
-                        (function(){
-                            var root = document.querySelector('.st-key-auth_panel');
-                            if (!root) return;
-                            var tabs = root.querySelectorAll('button[data-baseweb=\\'tab\\']');
-                            if (tabs.length >= 3) { tabs[2].click(); }
-                        })();
-                    ">Lupa Password?</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+                if st.button("Lupa Password?", key="btn_forgot", use_container_width=True):
+                    st.session_state["auth_view"] = "forgot"
+                    st.rerun()
 
                 if submit_masuk:
                     uname = login_username.strip().lower()
@@ -1345,65 +1401,6 @@ def render_auth_panel(user_db):
                                 "Hubungi admin untuk aktivasi langganan."
                             )
 
-            with tab_lupa:
-                st.markdown(
-                    """
-                    <div class="auth-forgot-link" style="text-align:left; margin-top:0; margin-bottom:10px;" onclick="
-                        (function(){
-                            var root = document.querySelector('.st-key-auth_panel');
-                            if (!root) return;
-                            var tabs = root.querySelectorAll('button[data-baseweb=\\'tab\\']');
-                            if (tabs.length >= 1) { tabs[0].click(); }
-                        })();
-                    ">← Kembali ke Masuk</div>
-                    """,
-                    unsafe_allow_html=True,
-                )
-                st.markdown(
-                    '<div class="auth-caption">Masukkan username dan email yang '
-                    'terdaftar. Kalau akun kamu pelanggan aktif, link reset '
-                    'password akan dikirim ke email kamu.</div>',
-                    unsafe_allow_html=True,
-                )
-                with st.form("form_lupa_password", clear_on_submit=False):
-                    lupa_username = st.text_input("Username", key="lupa_username_input")
-                    lupa_email = st.text_input("Email terdaftar", key="lupa_email_input")
-                    submit_lupa = st.form_submit_button("Kirim Link Reset", use_container_width=True)
-
-                if submit_lupa:
-                    uname = lupa_username.strip().lower()
-                    email_input = lupa_email.strip().lower()
-                    key = f"user:{uname}"
-                    record = user_db.get(key)
-                    status_ok = get_user_status(key, user_db) in ("owner", "active")
-                    email_ok = bool(
-                        record and email_input
-                        and record.get("email", "").strip().lower() == email_input
-                    )
-
-                    if not uname or not email_input:
-                        st.error("Username dan email wajib diisi.")
-                    else:
-                        app_url = st.secrets.get("APP_URL", "")
-                        if record and email_ok and status_ok and app_url:
-                            token = generate_reset_token(user_db, key)
-                            reset_link = f"{app_url}/?reset_token={token}&u={uname}"
-                            sent, err = send_reset_password_email(record["email"], uname, reset_link)
-                            if not sent and uname in OWNER_USERNAMES:
-                                # Detail error cuma tampil ke akun Owner sendiri,
-                                # buat gampang debug konfigurasi Brevo/APP_URL —
-                                # tidak bocor ke user lain lewat pesan generik di bawah.
-                                st.error(f"[Owner debug] Email gagal terkirim: {err}")
-                        # Pesan SELALU sama persis apa pun hasilnya (username salah,
-                        # email tidak cocok, belum berlangganan aktif, dll) — supaya
-                        # orang tidak bisa menebak-nebak username/email pelanggan
-                        # aktif dari respons form ini (mencegah user enumeration).
-                        st.success(
-                            "Jika akun terdaftar, email cocok, dan berlangganan aktif, "
-                            "link reset password sudah dikirim. Cek juga folder "
-                            "Spam/Promosi kalau belum masuk."
-                        )
-
 
 def render_reset_password_page(user_db, uname, token):
     """Halaman set password baru, diakses lewat link reset dari email.
@@ -1420,7 +1417,7 @@ def render_reset_password_page(user_db, uname, token):
                 st.error(
                     "Link reset password tidak valid atau sudah kedaluwarsa "
                     f"(berlaku {RESET_TOKEN_VALID_HOURS} jam). Silakan minta link "
-                    "baru lewat tab 'Lupa Password'."
+                    "baru lewat tautan 'Lupa Password?' di halaman Masuk."
                 )
                 return
 
