@@ -26,7 +26,7 @@ from community_feed import render_community_feed
 from notifications import render_notification_bell
 
 st.set_page_config(
-    page_title="RITEL SYARIAH",
+    page_title="SYARIAH SIGNAL",
     page_icon="🚀",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -383,7 +383,7 @@ def send_reset_password_email(to_email, to_username, reset_link):
     """
     api_key = st.secrets.get("BREVO_API_KEY", "")
     sender_email = st.secrets.get("BREVO_SENDER_EMAIL", "")
-    sender_name = st.secrets.get("BREVO_SENDER_NAME", "RITEL SYARIAH")
+    sender_name = st.secrets.get("BREVO_SENDER_NAME", "SYARIAH SIGNAL")
 
     if not api_key or not sender_email:
         return False, "BREVO_API_KEY / BREVO_SENDER_EMAIL belum diisi di Streamlit Secrets."
@@ -392,7 +392,7 @@ def send_reset_password_email(to_email, to_username, reset_link):
     payload = {
         "sender": {"name": sender_name, "email": sender_email},
         "to": [{"email": to_email, "name": to_username}],
-        "subject": "Reset Password — RITEL SYARIAH",
+        "subject": "Reset Password — SYARIAH SIGNAL",
         "htmlContent": (
             '<div style="font-family:sans-serif;font-size:15px;color:#222;">'
             f"<p>Halo <b>{safe_username}</b>,</p>"
@@ -703,17 +703,13 @@ st.markdown("""
     .orange-topbar-title {
         font-size: 30px;
         font-weight: 800;
-        color: #ffd400;
+        color: #ff8c00;
         margin-top: 10px;
         letter-spacing: 0.3px;
         line-height: 1.25;
         display: inline-flex;
         align-items: center;
         gap: 8px;
-    }
-    .orange-topbar-rocket {
-        fill: #ffd400;
-        flex-shrink: 0;
     }
     .orange-topbar-sub {
         font-size: 14px;
@@ -1072,17 +1068,33 @@ st.markdown("""
         transform: translateY(-3px);
         color: #ffd28a;
     }
+
+    /* Sembunyikan bar tab bawaan Streamlit di panel login — tab "Lupa
+       Password" tetap ada di DOM (supaya isinya tetap berfungsi) tapi
+       hanya bisa dipicu lewat link teks di bawah tombol "Masuk". */
+    .st-key-auth_panel div[data-baseweb="tab-list"] {
+        display: none;
+    }
+    .auth-forgot-link {
+        display: block;
+        text-align: center;
+        margin-top: 14px;
+        font-size: 13.5px;
+        color: #ff8c00;
+        cursor: pointer;
+        text-decoration: underline;
+        font-weight: 600;
+    }
+    .auth-forgot-link:hover {
+        color: #ffa733;
+    }
 </style>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <div class="orange-topbar">
     <div class="orange-topbar-title">
-        <svg class="orange-topbar-rocket" viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C9 5 7 9 7 13c0 1.5.5 3 1.5 4L7 21l3-1.5L12 21l2-1.5L17 21l-1.5-4c1-1 1.5-2.5 1.5-4 0-4-2-8-5-11z"/>
-            <circle cx="12" cy="11" r="1.4" fill="#0b0c16"/>
-        </svg>
-        RITEL SYARIAH
+        SYARIAH SIGNAL
     </div>
     <div class="orange-topbar-sub">Khusus saham syariah, semoga berkah</div>
 </div>
@@ -1231,8 +1243,7 @@ def render_auth_panel(user_db):
         with st.container(key="auth_panel"):
             st.markdown('<div class="auth-title">Masuk untuk Melanjutkan</div>', unsafe_allow_html=True)
             st.markdown(
-                '<div class="auth-caption">Belum punya akun? Daftar dulu — gratis, '
-                'cukup username, email &amp; password.</div>',
+                '<div class="auth-caption">Belum punya akun? Daftar dulu</div>',
                 unsafe_allow_html=True,
             )
 
@@ -1246,6 +1257,20 @@ def render_auth_panel(user_db):
                     with col_p:
                         login_password = st.text_input("Password", type="password", key="login_password_input")
                     submit_masuk = st.form_submit_button("Masuk", use_container_width=True)
+
+                st.markdown(
+                    """
+                    <div class="auth-forgot-link" onclick="
+                        (function(){
+                            var root = document.querySelector('.st-key-auth_panel');
+                            if (!root) return;
+                            var tabs = root.querySelectorAll('button[data-baseweb=\\'tab\\']');
+                            if (tabs.length >= 3) { tabs[2].click(); }
+                        })();
+                    ">Lupa Password?</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
                 if submit_masuk:
                     uname = login_username.strip().lower()
@@ -1321,6 +1346,19 @@ def render_auth_panel(user_db):
                             )
 
             with tab_lupa:
+                st.markdown(
+                    """
+                    <div class="auth-forgot-link" style="text-align:left; margin-top:0; margin-bottom:10px;" onclick="
+                        (function(){
+                            var root = document.querySelector('.st-key-auth_panel');
+                            if (!root) return;
+                            var tabs = root.querySelectorAll('button[data-baseweb=\\'tab\\']');
+                            if (tabs.length >= 1) { tabs[0].click(); }
+                        })();
+                    ">← Kembali ke Masuk</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
                 st.markdown(
                     '<div class="auth-caption">Masukkan username dan email yang '
                     'terdaftar. Kalau akun kamu pelanggan aktif, link reset '
