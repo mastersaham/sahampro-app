@@ -11,73 +11,19 @@ import gc
 import numpy as np
 import xml.etree.ElementTree as ET
 import pandas as pd
-# PERBAIKAN: "import yfinance as yf" DIPINDAH dari sini ke dalam masing-
-# masing fungsi yang benar-benar memakainya (get_quick_quote,
-# get_stock_history, get_stock_fundamentals). Alasannya: yfinance ikut
-# me-load curl_cffi (native lib buat nembus deteksi bot Yahoo) yang
-# dicurigai jadi penyebab "Segmentation fault" di Streamlit Cloud.
-# Kalau "import yfinance" ditaruh di sini (paling atas file), dia jalan
-# SETIAP kali app boot -- buat SEMUA user, bahkan yang cuma buka
-# dashboard dan gak butuh yfinance sama sekali (dashboard sudah baca
-# data dari Supabase, lihat _load_central_scan). Dengan lazy-import,
-# yfinance/curl_cffi baru ke-load pas ada user yang BENERAN buka
-# halaman detail 1 saham -- jadi kalaupun curl_cffi crash, dampaknya
-# cuma ke fitur itu, bukan bikin seluruh app mati buat semua orang.
+import yfinance as yf
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from datetime import time as dtime_cls
-
-# PERBAIKAN (Segmentation fault saat startup): streamlit-cookies-manager
-# secara internal masih pakai @st.cache (API lama yang sudah deprecated)
-# di salah satu fungsinya. Berdasarkan log crash, app mati dengan
-# "Segmentation fault" TEPAT setelah warning "st.cache is deprecated"
-# muncul -- jadi kemungkinan besar ini bug di implementasi lama st.cache
-# di versi Streamlit ini, bukan di kode kita atau di cryptography.
-# Kita gak bisa edit file library pihak ketiga itu langsung, jadi di sini
-# st.cache "dialihkan" ke st.cache_resource (API baru yang jadi
-# penggantinya, perilakunya setara untuk pemakaian sederhana seperti ini)
-# SEBELUM library-nya di-import, supaya begitu dia pasang @st.cache,
-# yang kepasang sebenarnya st.cache_resource. Kode kita sendiri sudah
-# 100% pakai st.cache_data/st.cache_resource, jadi aman gak kepengaruh.
-st.cache = st.cache_resource
-
 from streamlit_cookies_manager import EncryptedCookieManager
 from supabase import create_client
 
 # Fitur Community Feed (post, reaction, laporan spam) + notifikasi bell.
 # File-file ini harus ada satu folder sama file utama ini:
 #   community_feed.py, notifications.py
-#
-# PERBAIKAN (crash total tiap kali file ini hilang/rusak): sebelumnya
-# "import" langsung tanpa try/except -- kalau community_feed.py atau
-# notifications.py tidak ada di folder deploy, salah ketik nama file,
-# ATAU file itu sendiri punya bug/typo di dalamnya, maka baris "from ...
-# import ..." ini gagal SEBELUM script sempat jalan sama sekali. Karena
-# ini di baris paling atas file, akibatnya SELURUH app langsung crash
-# untuk SEMUA user (bukan cuma fitur komunitas/notifikasi yang mati),
-# dan pesan error yang tampil di Streamlit Cloud biasanya cuma
-# "ModuleNotFoundError" atau traceback teknis yang bikin bingung.
-# Sekarang di-fallback: kalau gagal, dua fitur itu saja yang nonaktif
-# (tampil pesan/no-op), sisa app (dashboard, scan, portofolio, dll)
-# tetap jalan normal.
-try:
-    from community_feed import render_community_feed
-except Exception as _e_community_feed_import:
-    def render_community_feed(*args, **kwargs):
-        st.warning(
-            "💬 Community Feed sedang tidak tersedia (modul community_feed.py "
-            f"gagal dimuat: {_e_community_feed_import}). Fitur lain di app "
-            "tetap berjalan normal."
-        )
-
-try:
-    from notifications import render_notification_bell
-except Exception as _e_notifications_import:
-    def render_notification_bell(*args, **kwargs):
-        # No-op: bell notifikasi cukup hilang diam-diam dari header,
-        # jangan sampai bikin seluruh header (dan app) gagal tampil.
-        pass
+from community_feed import render_community_feed
+from notifications import render_notification_bell
 
 st.set_page_config(
     page_title="RITEL SYARIAH",
@@ -178,161 +124,11 @@ SESSION_DURATION_DAYS = 30
 #  COOKIE MANAGER — supaya user tetap login walau tab/browser
 #  ditutup dan dibuka lagi (gak perlu login ulang tiap buka app),
 #  sampai dia benar-benar pencet tombol Logout atau cookie expired.
-#
-# PERBAIKAN (diagnosa Segmentation fault saat boot): EncryptedCookieManager
-# pakai `cryptography`/`cffi` (native/C extension) untuk enkripsi cookie,
-# dan objek ini dibuat ULANG di SETIAP kali script Streamlit di-run --
-# artinya ini SATU-SATUNYA kode native/crypto yang jalan di SETIAP render
-# halaman untuk SEMUA user (beda dengan yfinance/curl_cffi yang cuma jalan
-# saat user buka detail 1 saham). Kalau ada incompatibility versi
-# cryptography/cffi di server, titik inilah yang paling mungkin jadi
-# biang segfault yang muncul tepat setelah boot.
-#
-# Supaya bisa DIUJI tanpa ubah-ubah kode/deploy ulang berkali-kali,
-# ditambahkan flag SAFE_MODE_NO_COOKIES lewat Secrets:
-#
-#     SAFE_MODE_NO_COOKIES = true
-#
-# Kalau di-set true, app SAMA SEKALI TIDAK memuat EncryptedCookieManager
-# (login sesi jadi tidak persisten antar refresh browser -- user harus
-# login ulang tiap buka app -- tapi fitur lain tetap normal). Ini murni
-# alat diagnosa: nyalakan flag ini, redeploy, lalu lihat apakah
-# "Segmentation fault saat boot" masih muncul atau tidak.
-#   - Kalau MASIH crash dengan flag ini nyala -> penyebabnya BUKAN di
-#     cookie manager, cari di tempat lain (kemungkinan dependency lain
-#     atau resource/RAM limit Streamlit Cloud).
-#   - Kalau TIDAK crash lagi -> terkonfirmasi cookie manager /
-#     cryptography-cffi penyebabnya, dan cookie manager ini sebaiknya
-#     diganti library lain yang lebih aktif di-maintain.
-#
-# Matikan lagi flag ini begitu selesai diagnosa, supaya fitur "tetap
-# login" balik normal.
 # ============================================================
-SAFE_MODE_NO_COOKIES = str(st.secrets.get("SAFE_MODE_NO_COOKIES", "false")).lower() == "true"
-
-
-class _NoOpCookieJar:
-    """Stub cookie jar dipakai saat SAFE_MODE_NO_COOKIES aktif, supaya
-    save_login_cookie()/load_login_cookie()/clear_login_cookie() di bawah
-    tetap bisa dipanggil tanpa error -- cuma datanya gak pernah benar-benar
-    tersimpan ke browser (login tidak persisten selama mode ini aktif)."""
-
-    def __init__(self):
-        self._data = {}
-
-    def ready(self):
-        return True
-
-    def save(self):
-        pass
-
-    def get(self, key, default=None):
-        return self._data.get(key, default)
-
-    def __contains__(self, key):
-        return key in self._data
-
-    def __getitem__(self, key):
-        return self._data[key]
-
-    def __setitem__(self, key, value):
-        self._data[key] = value
-
-    def __delitem__(self, key):
-        self._data.pop(key, None)
-
-
-if SAFE_MODE_NO_COOKIES:
-    st.info(
-        "🔧 SAFE_MODE_NO_COOKIES aktif — cookie manager dinonaktifkan "
-        "sementara untuk diagnosa. Login tidak akan tersimpan antar "
-        "refresh browser sampai flag ini dimatikan lagi di Secrets.",
-        icon="🔧",
-    )
-    cookies = _NoOpCookieJar()
-else:
-    cookies = EncryptedCookieManager(prefix="aiidx_", password=COOKIE_PASSWORD)
-
-if (not SAFE_MODE_NO_COOKIES) and not cookies.ready():
+cookies = EncryptedCookieManager(prefix="aiidx_", password=COOKIE_PASSWORD)
+if not cookies.ready():
     # Komponen cookie butuh 1x render awal buat sinkron ke browser.
-    # PERBAIKAN: dulu di sini langsung st.stop() tanpa nampilin apa-apa,
-    # jadi user lihat layar kosong ~1-2 detik sebelum kelihatan udah
-    # login atau belum. Sekarang dikasih placeholder ringan biar gak
-    # kerasa "nge-hang" -- placeholder ini otomatis ke-replace begitu
-    # rerun berikutnya jalan (cookies udah ready).
-    st.markdown(
-        """
-        <div style="position:fixed; inset:0; z-index:999999;
-                    background:#0b0c16; display:flex; align-items:center;
-                    justify-content:center; flex-direction:column; gap:10px;">
-            <div style="color:#a9a7c4; font-size:14px;">Memuat sesi...</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
     st.stop()
-
-# ============================================================
-#  KONFIRMASI LOGOUT — nunggu cookie BENERAN kehapus di browser
-#  sebelum lanjut, bukan cuma nebak pakai time.sleep().
-#
-#  EncryptedCookieManager nyimpen instruksi hapus di
-#  st.session_state["CookieManager.queue"] dan baru dikirim ke
-#  browser lewat komponen JS. Instruksi itu baru dianggap
-#  "selesai" (dihapus dari antrean) begitu 1 siklus render
-#  berikutnya mengonfirmasi cookie-nya udah gak ada lagi. Kalau
-#  kita langsung st.rerun() begitu klik Logout tanpa nunggu
-#  konfirmasi ini, ada race: script pindah ke halaman login duluan
-#  padahal cookie lama masih nyangkut di browser -- jadi begitu
-#  user refresh, dia ke-auto-login lagi dari cookie basi itu.
-#
-#  Di sini kita loop (dengan batas maksimum biar gak hang selamanya
-#  kalau ada gangguan jaringan) sampai cookie "auth_session" benar2
-#  hilang dari cookies, baru lanjut nampilin halaman login.
-# ============================================================
-# PERBAIKAN (bug: masih login lagi setelah refresh pasca-logout):
-# `"auth_session" not in cookies` TERNYATA BUKAN konfirmasi asli bahwa
-# cookie sudah terhapus di BROWSER. clear_login_cookie() (`del
-# cookies["auth_session"]`) mengubah dict Python di memori SEKETIKA --
-# tapi penghapusan cookie FISIK di browser baru benar-benar jalan lewat
-# komponen JS/iframe EncryptedCookieManager, yang butuh minimal 1 siklus
-# render penuh untuk terkirim & tereksekusi. Akibatnya cek ini HAMPIR
-# SELALU sudah True di percobaan pertama (0 rerun tambahan) -- loop
-# tunggunya langsung "percaya" walau browser belum benar-benar proses
-# apa-apa. Kalau user refresh sesaat setelah itu, cookie lama masih
-# nyangkut di browser -> auto-login lagi.
-#
-# Sekarang dipaksa MINIMAL beberapa rerun (kasih waktu nyata ke
-# komponen JS-nya beneran jalan) SEBELUM cek di atas dipercaya,
-# bukan langsung percaya di kesempatan pertama.
-_LOGOUT_MIN_TRIES = 4   # ~4 x 0.25s = 1 detik minimum, kasih waktu nyata
-_LOGOUT_MAX_TRIES = 15  # ~15 x 0.25s = ~3.75 detik, jaga-jaga kalau macet
-
-if st.session_state.get("logout_confirm_pending"):
-    _logout_tries = st.session_state.get("logout_confirm_tries", 0)
-    _cookie_confirmed_gone = cookies.ready() and "auth_session" not in cookies
-    _min_wait_passed = _logout_tries >= _LOGOUT_MIN_TRIES
-    if (_cookie_confirmed_gone and _min_wait_passed) or _logout_tries >= _LOGOUT_MAX_TRIES:
-        # Kehapus beneran (dan sudah nunggu waktu minimum), atau kita
-        # udah nunggu ~3.75 detik dan nyerah -- session_state sisi kita
-        # udah bersih jadi user tetap efektif logout meski cookie
-        # fisiknya lelet kehapus.
-        st.session_state.pop("logout_confirm_pending", None)
-        st.session_state.pop("logout_confirm_tries", None)
-    else:
-        st.session_state["logout_confirm_tries"] = _logout_tries + 1
-        st.markdown(
-            """
-            <div style="position:fixed; inset:0; z-index:999999;
-                        background:#0b0c16; display:flex; align-items:center;
-                        justify-content:center; flex-direction:column; gap:10px;">
-                <div style="color:#a9a7c4; font-size:14px;">Logout...</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        time.sleep(0.2)
-        st.rerun()
 
 
 def save_login_cookie(username):
@@ -457,7 +253,6 @@ ISSI_FALLBACK_STOCKS = [
 ]
 
 
-@st.cache_data(ttl=20, show_spinner=False)
 def load_user_db():
     client = get_supabase_client()
     if client is None:
@@ -487,13 +282,6 @@ def load_user_db():
 
 
 def save_user_db(db):
-    # PERBAIKAN: load_user_db() sekarang di-cache (ttl=20s) supaya gak nembak
-    # Supabase di setiap rerun. Konsekuensinya, tiap kali kita nulis data baru
-    # lewat fungsi ini, cache lama harus langsung dibuang -- kalau tidak, user
-    # yang baru daftar/ganti password/upgrade langganan bisa lihat data basi
-    # sampai 20 detik ke depan.
-    load_user_db.clear()
-
     client = get_supabase_client()
     if client is None:
         # Fallback: sama seperti di load_user_db(), simpan ke JSON lokal.
@@ -912,51 +700,25 @@ st.markdown("""
         overflow: visible;
         text-align: center;
     }
-    /* Header halaman DAFTAR/LOGIN (belum masuk): roket di atas judul,
-       goyang terus-menerus (pakai animasi yang sama dengan roket loading),
-       judul besar dengan gradasi oranye. */
-    .login-hero-rocket {
-        font-size: 46px;
-        line-height: 1;
-        animation: rocket-launch 1.4s ease-in-out infinite;
-    }
-    .login-hero-title {
-        font-size: 34px;
+    .orange-topbar-title {
+        font-size: 30px;
         font-weight: 800;
+        color: #ffd400;
         margin-top: 10px;
         letter-spacing: 0.3px;
         line-height: 1.25;
-        background: linear-gradient(90deg, #ff8a1f, #ffd400);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
     }
-    .login-hero-sub {
+    .orange-topbar-rocket {
+        fill: #ffd400;
+        flex-shrink: 0;
+    }
+    .orange-topbar-sub {
         font-size: 14px;
         color: #a9a7c4;
         margin-top: 8px;
-    }
-    /* Header di DALAM dashboard (sudah login): cuma judul, tanpa roket,
-       ukuran lebih kecil dari hero login. */
-    .dash-topbar {
-        margin: 0 -1rem 18px -1rem;
-        padding: 8px 26px 14px 26px;
-        background: transparent;
-        text-align: center;
-    }
-    .dash-topbar-title {
-        font-size: 20px;
-        font-weight: 800;
-        letter-spacing: 0.3px;
-        background: linear-gradient(90deg, #ff8a1f, #ffd400);
-        -webkit-background-clip: text;
-        background-clip: text;
-        color: transparent;
-    }
-    .dash-topbar-sub {
-        font-size: 13px;
-        color: #a9a7c4;
-        margin-top: 6px;
     }
 
     .terminal-header {
@@ -1310,94 +1072,21 @@ st.markdown("""
         transform: translateY(-3px);
         color: #ffd28a;
     }
-
-    /* ---------------------------------------------------------
-       ROCKET LOADING OVERLAY — nutupin transisi kasar pas abis
-       login (form auth ilang -> dashboard render bertahap). Full-
-       screen, nunjukin sebentar, terus fade-out sendiri via CSS
-       animation-delay (jadi gak perlu JS buat timer-nya).
-    --------------------------------------------------------- */
-    .rocket-loading-overlay {
-        position: fixed;
-        inset: 0;
-        z-index: 999999;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        gap: 22px;
-        background:
-            radial-gradient(circle at 50% 35%, rgba(255,170,50,0.16) 0%, rgba(255,170,50,0) 55%),
-            #0b0c16;
-        animation: rocket-overlay-fadeout 0.6s ease forwards;
-        animation-delay: 1.4s;
-        pointer-events: none;
-    }
-    .rocket-loading-emoji {
-        font-size: 64px;
-        line-height: 1;
-        animation: rocket-launch 1.4s ease-in-out infinite;
-        filter: drop-shadow(0 8px 18px rgba(255,170,50,0.45));
-    }
-    .rocket-loading-text {
-        font-family: 'Poppins', sans-serif;
-        font-weight: 700;
-        font-size: 16px;
-        letter-spacing: 0.4px;
-        color: #ffd28a;
-    }
-    .rocket-loading-dots span {
-        animation: rocket-dot-blink 1.2s infinite;
-        opacity: 0.2;
-    }
-    .rocket-loading-dots span:nth-child(2) { animation-delay: 0.2s; }
-    .rocket-loading-dots span:nth-child(3) { animation-delay: 0.4s; }
-    .rocket-loading-bar {
-        width: 180px;
-        height: 4px;
-        border-radius: 4px;
-        background: rgba(255,255,255,0.08);
-        overflow: hidden;
-    }
-    .rocket-loading-bar::after {
-        content: "";
-        display: block;
-        width: 40%;
-        height: 100%;
-        border-radius: 4px;
-        background: linear-gradient(90deg, #ff8a1f, #ffd400);
-        animation: rocket-bar-slide 1.1s ease-in-out infinite;
-    }
-    @keyframes rocket-launch {
-        0%   { transform: translateY(0) rotate(0deg); }
-        50%  { transform: translateY(-14px) rotate(-4deg); }
-        100% { transform: translateY(0) rotate(0deg); }
-    }
-    @keyframes rocket-dot-blink {
-        0%, 80%, 100% { opacity: 0.2; }
-        40% { opacity: 1; }
-    }
-    @keyframes rocket-bar-slide {
-        0%   { transform: translateX(-100%); }
-        100% { transform: translateX(340%); }
-    }
-    @keyframes rocket-overlay-fadeout {
-        0%   { opacity: 1; }
-        99%  { opacity: 0; }
-        100% { opacity: 0; visibility: hidden; }
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# CATATAN: header brand "RITEL SYARIAH" dulu dirender di sini secara
-# tanpa syarat (jadi sama persis baik di halaman daftar/login maupun di
-# dalam dashboard). Sekarang dipecah jadi 2 versi berbeda, dirender di
-# tempat yang tepat sesuai status login:
-#   1) Halaman daftar/login (belum ada identitas) -> hero besar dengan
-#      roket goyang di atas judul (lihat sebelum render_auth_panel()).
-#   2) Di dalam dashboard (sudah login) -> judul kecil tanpa roket
-#      (lihat sesudah identitas ditentukan), dengan subjudul yang
-#      berbeda dan cuma tampil di halaman utama/home.
+st.markdown("""
+<div class="orange-topbar">
+    <div class="orange-topbar-title">
+        <svg class="orange-topbar-rocket" viewBox="0 0 24 24" width="28" height="28" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C9 5 7 9 7 13c0 1.5.5 3 1.5 4L7 21l3-1.5L12 21l2-1.5L17 21l-1.5-4c1-1 1.5-2.5 1.5-4 0-4-2-8-5-11z"/>
+            <circle cx="12" cy="11" r="1.4" fill="#0b0c16"/>
+        </svg>
+        RITEL SYARIAH
+    </div>
+    <div class="orange-topbar-sub">Khusus saham syariah, semoga berkah</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ============================================================
 #  AUTH / SUBSCRIPTION GATE
@@ -1580,7 +1269,6 @@ def render_auth_panel(user_db):
                     else:
                         st.session_state["auth_identifier"] = f"user:{uname}"
                         st.session_state["auth_display_name"] = uname
-                        st.session_state["just_logged_in"] = True
                         save_login_cookie(uname)
                         st.rerun()
 
@@ -1756,36 +1444,10 @@ if not identifier and not st.session_state.pop("skip_cookie_restore", False):
         display_name = _uname_from_cookie
         st.session_state["auth_identifier"] = identifier
         st.session_state["auth_display_name"] = display_name
-        st.session_state["just_logged_in"] = True
 
 if not identifier:
-    st.markdown("""
-    <div class="orange-topbar">
-        <div class="login-hero-rocket">🚀</div>
-        <div class="login-hero-title">RITEL SYARIAH</div>
-        <div class="login-hero-sub">Khusus saham syariah, semoga berkah</div>
-    </div>
-    """, unsafe_allow_html=True)
     render_auth_panel(load_user_db())
     st.stop()
-
-if st.session_state.pop("just_logged_in", False):
-    st.markdown("""
-    <div class="rocket-loading-overlay">
-        <div class="rocket-loading-emoji">🚀</div>
-        <div class="rocket-loading-text">
-            Menyiapkan dashboard
-            <span class="rocket-loading-dots"><span>.</span><span>.</span><span>.</span></span>
-        </div>
-        <div class="rocket-loading-bar"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
-st.markdown("""
-<div class="dash-topbar">
-    <div class="dash-topbar-title">RITEL SYARIAH</div>
-</div>
-""", unsafe_allow_html=True)
 
 # ---- User sudah punya identitas, cek status langganan ----
 user_db = load_user_db()
@@ -1875,26 +1537,25 @@ with st.container(key="header_status_bar"):
                 st.session_state["profile_popover_seed"] += 1
                 st.rerun()
             if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
-                # PERBAIKAN (popover kelihatan "nyangkut"/masih kebuka pas
-                # sudah pindah ke halaman login): dulu di klik tombol INI
-                # LANGSUNG auth dibersihkan + rerun ke overlay "Logout...".
-                # Popovernya masih dalam kondisi "baru saja dibuka" waktu
-                # seluruh halaman mendadak diganti total ke overlay penuh
-                # -- browser gak pernah dapat giliran render popover dalam
-                # kondisi TERTUTUP dulu, jadi kelihatan macet ke-render di
-                # atas halaman login sesaat.
-                #
-                # Sekarang dipecah 2 tahap: klik ini CUMA ganti key popover
-                # (jadi dianggap widget baru = otomatis kebuka DALAM
-                # kondisi tertutup) + nyalain flag "pending_logout", lalu
-                # rerun. User masih dianggap login sebentar di rerun
-                # berikutnya, jadi header di atas sempat ke-render dulu
-                # dengan popover yang sudah bersih tertutup -- BARU
-                # SETELAH itu (lihat blok "pending_logout" di bawah,
-                # setelah header selesai dirender) auth beneran
-                # dibersihkan & lanjut ke overlay logout.
                 st.session_state["profile_popover_seed"] += 1
-                st.session_state["pending_logout"] = True
+                st.session_state.pop("auth_identifier", None)
+                st.session_state.pop("auth_display_name", None)
+                clear_login_cookie()
+                # Cegah cookie lama (yang mungkin belum sempat kehapus di
+                # browser saat rerun ini terjadi) auto-login-in kita lagi.
+                st.session_state["skip_cookie_restore"] = True
+                # PERBAIKAN (bug "harus klik 2x"): EncryptedCookieManager
+                # menghapus cookie lewat komponen JS yang butuh 1 kali
+                # pulang-pergi komunikasi browser<->server. Kalau
+                # st.rerun() dipanggil PERSIS sesudah clear_login_cookie(),
+                # rerun itu sering kejadian SEBELUM instruksi hapus cookie
+                # beneran sampai & disinkronkan ke browser -- jadi klik
+                # pertama kelihatan "gak ngefek", baru klik kedua yang
+                # kerasa. Jeda singkat ini kasih waktu component itu
+                # menyelesaikan pulang-pergi tadi sebelum halaman di-render
+                # ulang, jadi 1x klik langsung keluar.
+                with st.spinner("Logout..."):
+                    time.sleep(0.35)
                 st.rerun()
 
     if col_notif is not None:
@@ -1905,30 +1566,6 @@ with st.container(key="header_status_bar"):
             if st.button("📌 Portofolio Saya", use_container_width=True):
                 st.session_state["show_portfolio"] = True
                 st.rerun()
-
-# ---- Tahap ke-2 logout (lihat komentar PERBAIKAN di tombol Logout di
-# atas): baru di sini, SETELAH header (dengan popover yang sudah
-# tertutup bersih) selesai dirender, auth beneran dibersihkan. ----
-if st.session_state.pop("pending_logout", False):
-    st.session_state.pop("auth_identifier", None)
-    st.session_state.pop("auth_display_name", None)
-    clear_login_cookie()
-    # Cegah cookie lama (yang mungkin belum sempat kehapus di
-    # browser saat rerun ini terjadi) auto-login-in kita lagi.
-    st.session_state["skip_cookie_restore"] = True
-    # PERBAIKAN: dulu di sini cuma time.sleep(0.35) lalu
-    # langsung st.rerun() -- itu tebakan buta, gak beneran
-    # ngecek apakah cookie-nya udah kehapus di browser. Kalau
-    # koneksi lagi lambat, delay segitu gak cukup: user lihat
-    # tombol "nyangkut", dan kalau keburu refresh, cookie lama
-    # masih ada jadi balik ke-login lagi. Sekarang kita cuma
-    # nyalain flag "logout_confirm_pending" -- pengecekan &
-    # loop tunggu konfirmasi asli (bukan tebakan) ada di awal
-    # skrip, jalan tiap rerun sampai cookie beneran hilang.
-    st.session_state["logout_confirm_pending"] = True
-    st.rerun()
-
-
 
 # ---- Banner soft: sisa masa aktif <=3 hari ----
 # Sengaja diletakkan di sini (segera setelah header, SEBELUM percabangan
@@ -1999,21 +1636,13 @@ def get_all_data(stocks_tuple):
     for i in range(0, len(stocks), BATCH_SIZE):
         batch = stocks[i:i + BATCH_SIZE]
         try:
-            import yfinance as yf
             raw = yf.download(
                 batch,
                 period="3mo",
                 interval="1d",
                 progress=False,
                 group_by="ticker",
-                # PERBAIKAN: threads=True bikin yfinance buka banyak sesi
-                # curl_cffi SEKALIGUS secara paralel -- curl_cffi (native lib
-                # buat nembus deteksi bot Yahoo) belum sepenuhnya thread-safe
-                # kalau dipakai konkuren begini, dan ini yang bikin proses mati
-                # (segmentation fault) di Streamlit Cloud. threads=False bikin
-                # tiap batch didownload berurutan -- sedikit lebih lambat,
-                # tapi batch-nya sudah kecil (60 saham) jadi masih cepat.
-                threads=False,
+                threads=True,
                 auto_adjust=True,
             )
         except Exception:
@@ -2112,7 +1741,6 @@ def get_quick_quote(ticker_jk):
     add_to_portfolio — script Streamlit berhenti di st.stop() sebelum
     sempat mengeksekusi definisi fungsi yang ditulis lebih ke bawah.)"""
     try:
-        import yfinance as yf
         df = yf.Ticker(ticker_jk).history(period="10d", interval="1d", auto_adjust=True)
         if df is None or df.empty or len(df) < 2:
             return None
@@ -2867,14 +2495,7 @@ def render_portfolio_page(user_db, identifier, display_name):
     lengkap (harga, %harian, %mingguan, sinyal, status bandar) untuk saham
     ISSI, dan data dasar SAJA (harga + %harian) untuk saham non-syariah,
     tanpa sinyal/rekomendasi apa pun untuk yang non-syariah."""
-    # PERBAIKAN (username kelihatan "dobel"): judul halaman ini dulu ikut
-    # nulis ulang {display_name} ("📌 Portofolio Saya — budi"), padahal
-    # nama user itu SUDAH tampil di tombol profil di header paling atas
-    # (header_status_bar, dirender sebelum fungsi ini dipanggil). Efeknya
-    # nama user kelihatan muncul 2x sekaligus di layar yang sama. Sekarang
-    # judul halaman ini gak mengulang nama lagi -- nama cukup tampil
-    # sekali di header atas.
-    st.markdown("### 📌 Portofolio Saya")
+    st.markdown(f"### 📌 Portofolio Saya — {display_name}")
     if st.button("← Kembali"):
         st.session_state["show_portfolio"] = False
         st.rerun()
@@ -3168,7 +2789,6 @@ def get_stock_history(ticker_jk, period_label):
             pass
 
     try:
-        import yfinance as yf
         ticker_obj = yf.Ticker(ticker_jk)
         if days is None:
             # "Sejak IPO" — ambil data paling panjang yang tersedia di yfinance
@@ -3213,7 +2833,6 @@ def get_stock_fundamentals(ticker_jk):
         except Exception:
             pass
     try:
-        import yfinance as yf
         info = yf.Ticker(ticker_jk).info or {}
         fields["nama"] = info.get("longName") or info.get("shortName")
         fields["sektor"] = info.get("sector")
@@ -3812,10 +3431,6 @@ MENU_ITEMS = [
 
 if st.session_state.active_panel is None:
     # ===================== HALAMAN: DASHBOARD =====================
-    st.markdown(
-        '<div class="dash-topbar-sub">Indikator analisa saham, bukan ajakan jual beli</div>',
-        unsafe_allow_html=True,
-    )
     render_stock_search_bar("dashboard_search_form")
     render_top_panel()
     st.divider()
