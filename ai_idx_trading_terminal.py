@@ -48,8 +48,36 @@ from supabase import create_client
 # Fitur Community Feed (post, reaction, laporan spam) + notifikasi bell.
 # File-file ini harus ada satu folder sama file utama ini:
 #   community_feed.py, notifications.py
-from community_feed import render_community_feed
-from notifications import render_notification_bell
+#
+# PERBAIKAN (crash total tiap kali file ini hilang/rusak): sebelumnya
+# "import" langsung tanpa try/except -- kalau community_feed.py atau
+# notifications.py tidak ada di folder deploy, salah ketik nama file,
+# ATAU file itu sendiri punya bug/typo di dalamnya, maka baris "from ...
+# import ..." ini gagal SEBELUM script sempat jalan sama sekali. Karena
+# ini di baris paling atas file, akibatnya SELURUH app langsung crash
+# untuk SEMUA user (bukan cuma fitur komunitas/notifikasi yang mati),
+# dan pesan error yang tampil di Streamlit Cloud biasanya cuma
+# "ModuleNotFoundError" atau traceback teknis yang bikin bingung.
+# Sekarang di-fallback: kalau gagal, dua fitur itu saja yang nonaktif
+# (tampil pesan/no-op), sisa app (dashboard, scan, portofolio, dll)
+# tetap jalan normal.
+try:
+    from community_feed import render_community_feed
+except Exception as _e_community_feed_import:
+    def render_community_feed(*args, **kwargs):
+        st.warning(
+            "💬 Community Feed sedang tidak tersedia (modul community_feed.py "
+            f"gagal dimuat: {_e_community_feed_import}). Fitur lain di app "
+            "tetap berjalan normal."
+        )
+
+try:
+    from notifications import render_notification_bell
+except Exception as _e_notifications_import:
+    def render_notification_bell(*args, **kwargs):
+        # No-op: bell notifikasi cukup hilang diam-diam dari header,
+        # jangan sampai bikin seluruh header (dan app) gagal tampil.
+        pass
 
 st.set_page_config(
     page_title="RITEL SYARIAH",
@@ -189,13 +217,33 @@ if not cookies.ready():
 #  kalau ada gangguan jaringan) sampai cookie "auth_session" benar2
 #  hilang dari cookies, baru lanjut nampilin halaman login.
 # ============================================================
+# PERBAIKAN (bug: masih login lagi setelah refresh pasca-logout):
+# `"auth_session" not in cookies` TERNYATA BUKAN konfirmasi asli bahwa
+# cookie sudah terhapus di BROWSER. clear_login_cookie() (`del
+# cookies["auth_session"]`) mengubah dict Python di memori SEKETIKA --
+# tapi penghapusan cookie FISIK di browser baru benar-benar jalan lewat
+# komponen JS/iframe EncryptedCookieManager, yang butuh minimal 1 siklus
+# render penuh untuk terkirim & tereksekusi. Akibatnya cek ini HAMPIR
+# SELALU sudah True di percobaan pertama (0 rerun tambahan) -- loop
+# tunggunya langsung "percaya" walau browser belum benar-benar proses
+# apa-apa. Kalau user refresh sesaat setelah itu, cookie lama masih
+# nyangkut di browser -> auto-login lagi.
+#
+# Sekarang dipaksa MINIMAL beberapa rerun (kasih waktu nyata ke
+# komponen JS-nya beneran jalan) SEBELUM cek di atas dipercaya,
+# bukan langsung percaya di kesempatan pertama.
+_LOGOUT_MIN_TRIES = 4   # ~4 x 0.25s = 1 detik minimum, kasih waktu nyata
+_LOGOUT_MAX_TRIES = 15  # ~15 x 0.25s = ~3.75 detik, jaga-jaga kalau macet
+
 if st.session_state.get("logout_confirm_pending"):
     _logout_tries = st.session_state.get("logout_confirm_tries", 0)
     _cookie_confirmed_gone = cookies.ready() and "auth_session" not in cookies
-    if _cookie_confirmed_gone or _logout_tries >= 10:
-        # Kehapus beneran (atau kita udah nunggu ~2 detik dan nyerah --
-        # session_state sisi kita udah bersih jadi user tetap efektif
-        # logout meski cookie fisiknya lelet kehapus).
+    _min_wait_passed = _logout_tries >= _LOGOUT_MIN_TRIES
+    if (_cookie_confirmed_gone and _min_wait_passed) or _logout_tries >= _LOGOUT_MAX_TRIES:
+        # Kehapus beneran (dan sudah nunggu waktu minimum), atau kita
+        # udah nunggu ~3.75 detik dan nyerah -- session_state sisi kita
+        # udah bersih jadi user tetap efektif logout meski cookie
+        # fisiknya lelet kehapus.
         st.session_state.pop("logout_confirm_pending", None)
         st.session_state.pop("logout_confirm_tries", None)
     else:
@@ -1754,23 +1802,26 @@ with st.container(key="header_status_bar"):
                 st.session_state["profile_popover_seed"] += 1
                 st.rerun()
             if st.button("🚪 Logout", use_container_width=True, key="logout_btn"):
+                # PERBAIKAN (popover kelihatan "nyangkut"/masih kebuka pas
+                # sudah pindah ke halaman login): dulu di klik tombol INI
+                # LANGSUNG auth dibersihkan + rerun ke overlay "Logout...".
+                # Popovernya masih dalam kondisi "baru saja dibuka" waktu
+                # seluruh halaman mendadak diganti total ke overlay penuh
+                # -- browser gak pernah dapat giliran render popover dalam
+                # kondisi TERTUTUP dulu, jadi kelihatan macet ke-render di
+                # atas halaman login sesaat.
+                #
+                # Sekarang dipecah 2 tahap: klik ini CUMA ganti key popover
+                # (jadi dianggap widget baru = otomatis kebuka DALAM
+                # kondisi tertutup) + nyalain flag "pending_logout", lalu
+                # rerun. User masih dianggap login sebentar di rerun
+                # berikutnya, jadi header di atas sempat ke-render dulu
+                # dengan popover yang sudah bersih tertutup -- BARU
+                # SETELAH itu (lihat blok "pending_logout" di bawah,
+                # setelah header selesai dirender) auth beneran
+                # dibersihkan & lanjut ke overlay logout.
                 st.session_state["profile_popover_seed"] += 1
-                st.session_state.pop("auth_identifier", None)
-                st.session_state.pop("auth_display_name", None)
-                clear_login_cookie()
-                # Cegah cookie lama (yang mungkin belum sempat kehapus di
-                # browser saat rerun ini terjadi) auto-login-in kita lagi.
-                st.session_state["skip_cookie_restore"] = True
-                # PERBAIKAN: dulu di sini cuma time.sleep(0.35) lalu
-                # langsung st.rerun() -- itu tebakan buta, gak beneran
-                # ngecek apakah cookie-nya udah kehapus di browser. Kalau
-                # koneksi lagi lambat, delay segitu gak cukup: user lihat
-                # tombol "nyangkut", dan kalau keburu refresh, cookie lama
-                # masih ada jadi balik ke-login lagi. Sekarang kita cuma
-                # nyalain flag "logout_confirm_pending" -- pengecekan &
-                # loop tunggu konfirmasi asli (bukan tebakan) ada di awal
-                # skrip, jalan tiap rerun sampai cookie beneran hilang.
-                st.session_state["logout_confirm_pending"] = True
+                st.session_state["pending_logout"] = True
                 st.rerun()
 
     if col_notif is not None:
@@ -1781,6 +1832,30 @@ with st.container(key="header_status_bar"):
             if st.button("📌 Portofolio Saya", use_container_width=True):
                 st.session_state["show_portfolio"] = True
                 st.rerun()
+
+# ---- Tahap ke-2 logout (lihat komentar PERBAIKAN di tombol Logout di
+# atas): baru di sini, SETELAH header (dengan popover yang sudah
+# tertutup bersih) selesai dirender, auth beneran dibersihkan. ----
+if st.session_state.pop("pending_logout", False):
+    st.session_state.pop("auth_identifier", None)
+    st.session_state.pop("auth_display_name", None)
+    clear_login_cookie()
+    # Cegah cookie lama (yang mungkin belum sempat kehapus di
+    # browser saat rerun ini terjadi) auto-login-in kita lagi.
+    st.session_state["skip_cookie_restore"] = True
+    # PERBAIKAN: dulu di sini cuma time.sleep(0.35) lalu
+    # langsung st.rerun() -- itu tebakan buta, gak beneran
+    # ngecek apakah cookie-nya udah kehapus di browser. Kalau
+    # koneksi lagi lambat, delay segitu gak cukup: user lihat
+    # tombol "nyangkut", dan kalau keburu refresh, cookie lama
+    # masih ada jadi balik ke-login lagi. Sekarang kita cuma
+    # nyalain flag "logout_confirm_pending" -- pengecekan &
+    # loop tunggu konfirmasi asli (bukan tebakan) ada di awal
+    # skrip, jalan tiap rerun sampai cookie beneran hilang.
+    st.session_state["logout_confirm_pending"] = True
+    st.rerun()
+
+
 
 # ---- Banner soft: sisa masa aktif <=3 hari ----
 # Sengaja diletakkan di sini (segera setelah header, SEBELUM percabangan
@@ -2719,7 +2794,14 @@ def render_portfolio_page(user_db, identifier, display_name):
     lengkap (harga, %harian, %mingguan, sinyal, status bandar) untuk saham
     ISSI, dan data dasar SAJA (harga + %harian) untuk saham non-syariah,
     tanpa sinyal/rekomendasi apa pun untuk yang non-syariah."""
-    st.markdown(f"### 📌 Portofolio Saya — {display_name}")
+    # PERBAIKAN (username kelihatan "dobel"): judul halaman ini dulu ikut
+    # nulis ulang {display_name} ("📌 Portofolio Saya — budi"), padahal
+    # nama user itu SUDAH tampil di tombol profil di header paling atas
+    # (header_status_bar, dirender sebelum fungsi ini dipanggil). Efeknya
+    # nama user kelihatan muncul 2x sekaligus di layar yang sama. Sekarang
+    # judul halaman ini gak mengulang nama lagi -- nama cukup tampil
+    # sekali di header atas.
+    st.markdown("### 📌 Portofolio Saya")
     if st.button("← Kembali"):
         st.session_state["show_portfolio"] = False
         st.rerun()

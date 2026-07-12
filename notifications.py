@@ -1,5 +1,5 @@
 """
-notifications.py
+notifications.py (PATCHED)
 =================
 Komponen notifikasi untuk SahamPro Community Feed.
 Nampilin bell icon + jumlah notif belum dibaca, dan list notifikasi
@@ -9,6 +9,26 @@ Cara pakai di app utama, biasanya taruh di sidebar atau header:
 
     from notifications import render_notification_bell
     render_notification_bell(supabase, user_id=st.session_state["user_id"])
+
+===========================================================================
+CATATAN PERBAIKAN:
+
+1. get_unread_count() dipanggil di HEADER, yang dirender di SEMUA
+   halaman app utama. Streamlit me-rerun seluruh script tiap ada
+   interaksi APA PUN (klik tombol, ganti tab, dst) -- jadi tanpa cache,
+   fungsi ini menembak Supabase secara LIVE di setiap klik di
+   MANA PUN di seluruh app, bukan cuma pas lagi buka Community Feed.
+   Kalau Supabase lagi lambat/timeout, SELURUH app ikut kerasa
+   'nyangkut' padahal user cuma klik menu lain yang gak ada
+   hubungannya sama notifikasi. Sekarang di-cache 15 detik
+   (st.cache_data) -- badge tetap kerasa 'real-time' buat manusia,
+   tapi gak lagi query ke DB di SETIAP rerun.
+
+2. Semua query dibungkus try/except. Kalau Supabase gagal/timeout,
+   bell tetap tampil (badge dianggap 0 / list kosong dengan pesan),
+   bukan melempar exception yang bisa mengcrash header -> seluruh
+   halaman ikut gagal render.
+===========================================================================
 """
 
 import streamlit as st
@@ -18,6 +38,80 @@ NTYPE_LABELS = {
     "reaction_add": "bereaksi ke post kamu",
     "reaction_remove": "membatalkan reaksi ke post kamu",
 }
+
+# PERBAIKAN (performa): cache badge count 15 detik supaya tidak query
+# Supabase di SETIAP rerun script (yang di Streamlit terjadi di HAMPIR
+# setiap interaksi, di halaman manapun). 15 detik cukup terasa
+# "real-time" untuk badge notifikasi, tapi drastis mengurangi beban ke
+# Supabase dan menghindari app kerasa "nyangkut" gara-gara bell ini.
+@st.cache_data(ttl=15, show_spinner=False)
+def get_unread_count(_supabase, user_id: str) -> int:
+    """Query ringan cuma buat badge angka - aman dipanggil tiap beberapa detik.
+
+    PERBAIKAN: parameter dinamai `_supabase` (pakai underscore) supaya
+    Streamlit TIDAK mencoba hash objek Supabase client ini untuk key
+    cache. Tanpa underscore, st.cache_data akan coba hash object client
+    yang tidak bisa di-hash dan melempar `UnhashableParamError` --
+    artinya bell notifikasi (dan seluruh header, karena dirender di
+    semua halaman) langsung crash begitu dibuka."""
+    try:
+        res = _supabase.table("notifications").select(
+            "id", count="exact"
+        ).eq("recipient_id", user_id).eq("is_read", False).execute()
+        return res.count or 0
+    except Exception:
+        # Supabase lagi bermasalah -> anggap 0 notif baru, jangan sampai
+        # bikin header (dan seluruh halaman) gagal render.
+        return 0
+
+
+def mark_all_read(supabase, user_id: str):
+    try:
+        supabase.table("notifications").update({"is_read": True}).eq(
+            "recipient_id", user_id).eq("is_read", False).execute()
+    except Exception as e:
+        st.error(f"Gagal menandai notifikasi: {e}")
+    # Cache get_unread_count sudah usang begitu status is_read berubah --
+    # bersihkan supaya badge langsung update, bukan nunggu TTL 15 detik.
+    get_unread_count.clear()
+
+
+def render_notification_bell(supabase, user_id: str, limit: int = 20):
+    if supabase is None:
+        return
+
+    unread = get_unread_count(supabase, user_id)
+    badge = f" ({unread})" if unread else ""
+
+    with st.popover(f"🔔{badge}", help="Notifikasi"):
+        st.markdown("**Notifikasi**")
+
+        if unread:
+            if st.button("Tandai semua sudah dibaca", key="mark_all_read"):
+                mark_all_read(supabase, user_id)
+                st.rerun()
+
+        try:
+            res = supabase.table("notifications").select("*").eq(
+                "recipient_id", user_id
+            ).order("created_at", desc=True).limit(limit).execute()
+            notifs = res.data or []
+        except Exception as e:
+            st.caption(f"Gagal memuat notifikasi: {e}")
+            return
+
+        if not notifs:
+            st.caption("Belum ada notifikasi.")
+            return
+
+        for n in notifs:
+            emoji = n.get("emoji") or ""
+            label = NTYPE_LABELS.get(n.get("type"), n.get("type", ""))
+            prefix = "🔵 " if not n.get("is_read") else ""
+            actor = n.get("actor_username", "Seseorang")
+            st.markdown(f"{prefix}**{actor}** {emoji} {label}")
+            st.caption(_time_ago(n.get("created_at", "")))
+            st.divider()
 
 
 def _time_ago(created_at_str: str) -> str:
@@ -33,49 +127,6 @@ def _time_ago(created_at_str: str) -> str:
         return f"{int(diff // 86400)} hari lalu"
     except Exception:
         return ""
-
-
-def get_unread_count(supabase, user_id: str) -> int:
-    """Query ringan cuma buat badge angka - aman dipanggil tiap beberapa detik."""
-    res = supabase.table("notifications").select(
-        "id", count="exact"
-    ).eq("recipient_id", user_id).eq("is_read", False).execute()
-    return res.count or 0
-
-
-def mark_all_read(supabase, user_id: str):
-    supabase.table("notifications").update({"is_read": True}).eq(
-        "recipient_id", user_id).eq("is_read", False).execute()
-
-
-def render_notification_bell(supabase, user_id: str, limit: int = 20):
-    unread = get_unread_count(supabase, user_id)
-    badge = f" ({unread})" if unread else ""
-
-    with st.popover(f"🔔{badge}", help="Notifikasi"):
-        st.markdown("**Notifikasi**")
-
-        if unread:
-            if st.button("Tandai semua sudah dibaca", key="mark_all_read"):
-                mark_all_read(supabase, user_id)
-                st.rerun()
-
-        res = supabase.table("notifications").select("*").eq(
-            "recipient_id", user_id
-        ).order("created_at", desc=True).limit(limit).execute()
-        notifs = res.data or []
-
-        if not notifs:
-            st.caption("Belum ada notifikasi.")
-            return
-
-        for n in notifs:
-            emoji = n.get("emoji") or ""
-            label = NTYPE_LABELS.get(n["type"], n["type"])
-            prefix = "🔵 " if not n["is_read"] else ""
-            st.markdown(f"{prefix}**{n['actor_username']}** {emoji} {label}")
-            st.caption(_time_ago(n["created_at"]))
-            st.divider()
 
 
 # ------------------------------------------------------------
