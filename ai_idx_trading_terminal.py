@@ -1078,7 +1078,7 @@ st.markdown("""
         background: transparent !important;
         border: none !important;
         box-shadow: none !important;
-        color: #ff8c00 !important;
+        color: #6b3a10 !important;
         text-decoration: underline;
         font-weight: 600;
         font-size: 13.5px;
@@ -1086,7 +1086,7 @@ st.markdown("""
     }
     .st-key-btn_forgot button:hover,
     .st-key-btn_back_login button:hover {
-        color: #ffa733 !important;
+        color: #40230a !important;
         transform: none !important;
     }
     .st-key-btn_back_login button {
@@ -1462,23 +1462,29 @@ if _reset_token_param and _reset_uname_param:
 identifier = st.session_state.get("auth_identifier")
 display_name = st.session_state.get("auth_display_name", identifier)
 
-if not identifier and not st.session_state.pop("skip_cookie_restore", False):
-    # Belum ada sesi di session_state (misal karena tab baru / reload) —
-    # coba pulihkan otomatis dari cookie sebelum minta login ulang.
-    #
-    # CATATAN: flag "skip_cookie_restore" dicek di sini untuk menghindari
-    # race condition saat logout. EncryptedCookieManager menghapus cookie
-    # lewat komponen JS yang butuh 1 siklus komunikasi browser<->server;
-    # kalau kita langsung st.rerun() setelah clear_login_cookie(), rerun
-    # itu bisa kejadian SEBELUM cookie beneran terhapus di browser, jadi
-    # tanpa flag ini user akan otomatis ke-login lagi dari cookie lama.
-    _user_db_for_cookie_check = load_user_db()
-    _uname_from_cookie = load_login_cookie(_user_db_for_cookie_check)
-    if _uname_from_cookie:
-        identifier = f"user:{_uname_from_cookie}"
-        display_name = _uname_from_cookie
-        st.session_state["auth_identifier"] = identifier
-        st.session_state["auth_display_name"] = display_name
+if not identifier:
+    if st.session_state.get("skip_cookie_restore"):
+        # Baru saja logout. Jeda tetap (time.sleep) sebelumnya TIDAK cukup
+        # diandalkan di koneksi lambat -- komponen penghapus cookie butuh
+        # 1 kali pulang-pergi browser<->server yang waktunya bisa lebih
+        # dari jeda itu. Jadi di sini kita BENAR-BENAR cek: cookie-nya
+        # sudah kosong atau belum? Selama belum kosong, jangan coba
+        # restore sesi dari situ (supaya tidak auto-login lagi), dan flag
+        # "skip_cookie_restore" ini TETAP dipertahankan (tidak langsung
+        # dibuang) sampai cookie-nya benar-benar hilang di browser --
+        # dicek ulang tiap kali halaman di-refresh atau ada rerun lain.
+        if cookies.get("auth_session") is None:
+            st.session_state.pop("skip_cookie_restore", None)
+    else:
+        # Belum ada sesi di session_state (misal karena tab baru / reload) —
+        # coba pulihkan otomatis dari cookie sebelum minta login ulang.
+        _user_db_for_cookie_check = load_user_db()
+        _uname_from_cookie = load_login_cookie(_user_db_for_cookie_check)
+        if _uname_from_cookie:
+            identifier = f"user:{_uname_from_cookie}"
+            display_name = _uname_from_cookie
+            st.session_state["auth_identifier"] = identifier
+            st.session_state["auth_display_name"] = display_name
 
 if not identifier:
     render_auth_panel(load_user_db())
@@ -1578,17 +1584,18 @@ with st.container(key="header_status_bar"):
                 clear_login_cookie()
                 # Cegah cookie lama (yang mungkin belum sempat kehapus di
                 # browser saat rerun ini terjadi) auto-login-in kita lagi.
+                # Flag ini sekarang TIDAK langsung dibuang di rerun berikutnya
+                # -- dia dipertahankan sampai kode di atas benar-benar
+                # verifikasi cookie-nya sudah kosong (lihat blok
+                # "skip_cookie_restore" di dekat pengecekan identifier).
+                # Ini penting terutama di koneksi lambat, supaya user tidak
+                # ke-auto-login lagi walau proses hapus cookie di komponen
+                # JS-nya butuh waktu lebih dari 1 kali render.
                 st.session_state["skip_cookie_restore"] = True
-                # PERBAIKAN (bug "harus klik 2x"): EncryptedCookieManager
-                # menghapus cookie lewat komponen JS yang butuh 1 kali
-                # pulang-pergi komunikasi browser<->server. Kalau
-                # st.rerun() dipanggil PERSIS sesudah clear_login_cookie(),
-                # rerun itu sering kejadian SEBELUM instruksi hapus cookie
-                # beneran sampai & disinkronkan ke browser -- jadi klik
-                # pertama kelihatan "gak ngefek", baru klik kedua yang
-                # kerasa. Jeda singkat ini kasih waktu component itu
-                # menyelesaikan pulang-pergi tadi sebelum halaman di-render
-                # ulang, jadi 1x klik langsung keluar.
+                # Jeda singkat ini cuma bantuan awal (bukan jaminan) supaya
+                # komponen cookie sempat mulai proses hapus sebelum halaman
+                # di-render ulang -- verifikasi sebenarnya tetap dilakukan
+                # lewat pengecekan cookies.get() di atas.
                 with st.spinner("Logout..."):
                     time.sleep(0.35)
                 st.rerun()
