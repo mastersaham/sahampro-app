@@ -693,28 +693,28 @@ st.markdown("""
        TOP HEADER — pita judul dengan nuansa mengambang, dreamy
     --------------------------------------------------------- */
     .orange-topbar {
-        margin: 0 -1rem 30px -1rem;
-        padding: 8px 26px 34px 26px;
+        margin: 0 -1rem 6px -1rem;
+        padding: 4px 26px 4px 26px;
         background: transparent;
         position: relative;
         overflow: visible;
         text-align: center;
     }
     .orange-topbar-title {
-        font-size: 30px;
+        font-size: 24px;
         font-weight: 800;
         color: #ff8c00;
-        margin-top: 10px;
+        margin-top: 4px;
         letter-spacing: 0.3px;
-        line-height: 1.25;
+        line-height: 1.2;
         display: inline-flex;
         align-items: center;
         gap: 8px;
     }
     .orange-topbar-sub {
-        font-size: 14px;
+        font-size: 13px;
         color: #a9a7c4;
-        margin-top: 8px;
+        margin-top: 2px;
     }
 
     .terminal-header {
@@ -944,7 +944,7 @@ st.markdown("""
     .st-key-auth_panel {
         max-width: 340px;
         margin: 0 auto;
-        padding: 30px 26px 24px 26px;
+        padding: 20px 26px 20px 26px;
         border-radius: 32px;
         background: linear-gradient(160deg, #ffd28a 0%, #ff9a3d 55%, #ff7a1a 100%);
         border: 1px solid rgba(255,255,255,0.25);
@@ -968,7 +968,7 @@ st.markdown("""
         text-align: center;
         font-size: 12.5px;
         color: #6b3a10;
-        margin-bottom: 18px;
+        margin-bottom: 10px;
     }
 
     /* PERBAIKAN: di Streamlit versi baru, <input> dibungkus 2 lapis div
@@ -1251,8 +1251,6 @@ def render_auth_panel(user_db):
     st.session_state.setdefault("auth_view", "login")
 
     with st.container(key="auth_wrap"):
-        st.markdown('<div class="auth-logo-badge">🔐</div>', unsafe_allow_html=True)
-
         with st.container(key="auth_panel"):
             if st.session_state["auth_view"] == "forgot":
                 st.markdown('<div class="auth-title">Lupa Password</div>', unsafe_allow_html=True)
@@ -1409,7 +1407,6 @@ def render_reset_password_page(user_db, uname, token):
     record = user_db.get(key)
 
     with st.container(key="auth_wrap"):
-        st.markdown('<div class="auth-logo-badge">🔑</div>', unsafe_allow_html=True)
         with st.container(key="auth_panel"):
             st.markdown('<div class="auth-title">Buat Password Baru</div>', unsafe_allow_html=True)
 
