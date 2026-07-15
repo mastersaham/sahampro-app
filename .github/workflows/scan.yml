@@ -56,12 +56,4 @@ jobs:
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           GOAPI_API_KEY: ${{ secrets.GOAPI_API_KEY }}
         run: python scan_worker.py
-        # trigger re-register          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Jalankan petugas scan
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python scan_worker.py
         # trigger re-register
