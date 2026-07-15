@@ -211,8 +211,14 @@ def get_all_idx_stocks():
 # ------------------------------------------------------------
 
 def support_resistance(df):
-    support = df['Low'].rolling(20).min().iloc[-1]
-    resistance = df['High'].rolling(20).max().iloc[-1]
+    """PERBAIKAN: sebelumnya window 20 hari ikut menyertakan High/Low
+    hari ini sendiri, jadi resistance >= High hari ini >= Close hari ini
+    SELALU -- breakout_valid() jadi mustahil True. Sekarang dihitung dari
+    20 hari SEBELUM hari ini, biar Close hari ini valid dibandingkan
+    terhadap level yang sudah terbentuk sebelumnya."""
+    prior = df.iloc[:-1] if len(df) > 20 else df
+    support = prior['Low'].rolling(20).min().iloc[-1]
+    resistance = prior['High'].rolling(20).max().iloc[-1]
     return support, resistance
 
 
@@ -331,7 +337,11 @@ def breakout_valid(df, resistance):
 
 
 def swing_detector(df):
-    high = df['High'].rolling(10).max().iloc[-10]
+    """PERBAIKAN: .iloc[-10] sebelumnya ngambil rolling-max dari window
+    yang berakhir 10 hari LALU (jendela H-19 s/d H-10), bukan puncak 10
+    hari TERAKHIR seperti maksud aslinya. Ganti ke .iloc[-1] biar 'high'
+    beneran puncak 10 hari terbaru sampai hari ini."""
+    high = df['High'].rolling(10).max().iloc[-1]
     now = df['Close'].iloc[-1]
     drop = (high - now) / high * 100
     return drop > 25, drop
@@ -457,8 +467,17 @@ def bandar_detection(df):
     return "NETRAL"
 
 
-def fake_breakout_detector(df, resistance):
-    return df['Close'].iloc[-2] > resistance and df['Close'].iloc[-1] < resistance
+def fake_breakout_detector(df):
+    """PERBAIKAN: dulu pakai `resistance` yang sama dari support_resistance(),
+    tapi window itu (bahkan setelah difix ke H-1) masih menyertakan High
+    kemarin sendiri -- jadi Close kemarin > resistance tetap mustahil True.
+    Sekarang hitung resistance sendiri dari 20 hari SEBELUM kemarin (H-21
+    s/d H-2), biar Close kemarin valid dibandingkan terhadap level yang
+    benar-benar terbentuk sebelum kemarin."""
+    if len(df) < 22:
+        return False
+    prior_resistance = df['High'].iloc[:-2].rolling(20).max().iloc[-1]
+    return df['Close'].iloc[-2] > prior_resistance and df['Close'].iloc[-1] < prior_resistance
 
 
 # ------------------------------------------------------------
@@ -517,7 +536,7 @@ def build_full_scan(stocks=None):
             swing, drop = swing_detector(df)
             entry, tp, sl = entry_exit(df, support, resistance)
             bandar = bandar_detection(df)
-            fake_break = fake_breakout_detector(df, resistance)
+            fake_break = fake_breakout_detector(df)
             change_pct = pct_change(df)
             week_change_pct = pct_change_week(df)
             results.append({

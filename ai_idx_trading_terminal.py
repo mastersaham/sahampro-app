@@ -846,17 +846,36 @@ st.markdown("""
 
     /* search bar cari saham -- input + tombol lekat jadi 1 pill putih,
        bukan 2 elemen terpisah (permintaan: "jangan 2 baris/2 tombol") */
+    /* jarak ke elemen di atasnya (nav icon row) kejauhan -- rapetin */
+    div[class*="search_form_wrap"] {
+        margin-top: -14px !important;
+    }
     div[class*="search_form_wrap"] div[data-testid="stForm"] {
         background: transparent;
         border: none;
         padding: 0;
     }
+    /* PERBAIKAN: bawaan Streamlit, kolom form otomatis TURUN JADI 2 BARIS
+       di layar sempit (HP). Dipaksa tetap row 1 baris di semua ukuran
+       layar (HP maupun desktop), input fleksibel & tombol kaca pembesar
+       lebar tetap kecil. */
     div[class*="search_form_wrap"] div[data-testid="stHorizontalBlock"] {
         gap: 0 !important;
+        flex-direction: row !important;
+        flex-wrap: nowrap !important;
         background: #ffffff;
         border-radius: 10px;
         overflow: hidden;
         box-shadow: 0 4px 14px -8px rgba(0,0,0,0.4);
+    }
+    div[class*="search_form_wrap"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+        width: auto !important;
+        min-width: 0 !important;
+        flex: 1 1 auto !important;
+    }
+    div[class*="search_form_wrap"] div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"]:last-child {
+        flex: 0 0 46px !important;
+        width: 46px !important;
     }
     div[class*="search_form_wrap"] div[data-testid="stTextInput"] input {
         background: #ffffff !important;
@@ -878,7 +897,9 @@ st.markdown("""
         border-radius: 0 !important;
         box-shadow: none !important;
         height: 42px !important;
+        width: 46px !important;
         min-width: 0 !important;
+        padding: 0 !important;
         font-size: 16px !important;
     }
 
@@ -974,6 +995,21 @@ st.markdown("""
         font-size: 13px;
     }
     .scroll-item:last-child { margin-bottom: 0; }
+    .gl-tag {
+        display: inline-block;
+        margin-left: 4px;
+        padding: 1px 7px;
+        border-radius: 8px;
+        font-size: 11px;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+    .gl-good { background: rgba(0,224,140,0.15); color: #00e08c; }
+    .gl-bad { background: rgba(255,82,82,0.15); color: #ff5252; }
+    .gl-warn { background: rgba(255,152,0,0.15); color: #ff9800; }
+    .gl-caution { background: rgba(255,193,7,0.15); color: #ffc107; }
+    .gl-rebound { background: rgba(34,211,238,0.15); color: #22d3ee; }
+    .gl-neutral { background: rgba(156,163,175,0.15); color: #9ca3af; }
 
     /* ---------------------------------------------------------
        LOGIN / DAFTAR PANEL — card oranye dreamy, mengambang
@@ -3063,13 +3099,45 @@ def render_top_panel():
         gainers = ranked.head(50)
         losers = ranked.tail(50).sort_values("change_pct")
 
+        def _gainer_loser_label(r):
+            """Label singkat status gainer/loser, gabungan trend+bandar+
+            signal+fake_breakout yang UDAH ADA di scan_df (belum termasuk
+            foreign flow -- itu masih terkunci, lihat panel Broker Summary).
+            bandar itu snapshot HARI INI aja (volume spike + arah harga),
+            bukan pola akumulasi/distribusi multi-hari."""
+            chg = r.get("change_pct", 0) or 0
+            bandar = str(r.get("bandar", "NETRAL"))
+            trend = str(r.get("trend", ""))
+            sig = str(r.get("signal", ""))
+            fake_break = bool(r.get("fake_breakout", False))
+
+            if chg >= 0:
+                if fake_break:
+                    return "gl-warn", "🟠 Hati-hati Bantingan"
+                if "MARKUP" in bandar and "BUY" in sig:
+                    return "gl-good", "🟢 Lanjut Naik"
+                if "NETRAL" in bandar and ("SELL" in sig or "HOLD" in sig):
+                    return "gl-caution", "🟡 Naik Tanpa Volume"
+                if "Bearish" in trend:
+                    return "gl-caution", "🟡 Rawan Reversal"
+                return "gl-neutral", "⚪ Pantau"
+            else:
+                if "DISTRIBUSI" in bandar and "SELL" in sig:
+                    return "gl-bad", "🔴 Tekanan Jual"
+                if "NETRAL" in bandar and "Bullish" in trend and ("BUY" in sig or "HOLD" in sig):
+                    return "gl-rebound", "🔵 Potensi Rebound"
+                return "gl-neutral", "⚪ Pantau"
+
         def _render_scroll_list(rows):
             items_html = "".join(
-                f'<div class="scroll-item">'
-                f'<a class="stock-link" href="?stock={_display_ticker(r["stock"])}" target="_self">'
-                f'{_display_ticker(r["stock"])}</a> — {r["price"]} '
-                f'<span class="{"gain-up" if r["change_pct"] >= 0 else "gain-down"}">'
-                f'({r["change_pct"]:+.2f}%)</span></div>'
+                (lambda cls, label: (
+                    f'<div class="scroll-item">'
+                    f'<a class="stock-link" href="?stock={_display_ticker(r["stock"])}" target="_self">'
+                    f'{_display_ticker(r["stock"])}</a> — {r["price"]} '
+                    f'<span class="{"gain-up" if r["change_pct"] >= 0 else "gain-down"}">'
+                    f'({r["change_pct"]:+.2f}%)</span> '
+                    f'<span class="gl-tag {cls}">{label}</span></div>'
+                ))(*_gainer_loser_label(r))
                 for _, r in rows.iterrows()
             )
             return f'<div class="scroll-list">{items_html}</div>'
