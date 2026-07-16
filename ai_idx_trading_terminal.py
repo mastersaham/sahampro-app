@@ -792,6 +792,16 @@ st.markdown("""
         border: none !important;
         box-shadow: none !important;
     }
+    /* PERBAIKAN: tulisan "HOME" kadang kebawa warna putih (default tombol
+       Streamlit) karena selector warna sebelumnya kalah dari elemen teks
+       di DALAM tombol (Streamlit bungkus label pakai <div>/<p> sendiri).
+       Sekarang semua elemen anak di dalam tombolnya juga dipaksa gelap. */
+    .st-key-portfolio_btn button,
+    .st-key-portfolio_btn button *,
+    .st-key-home_btn button,
+    .st-key-home_btn button * {
+        color: #1a0f00 !important;
+    }
     .st-key-portfolio_btn button:hover,
     .st-key-home_btn button:hover {
         background: transparent !important;
@@ -1029,21 +1039,41 @@ st.markdown("""
         content: "";
     }
     .disclaimer-popup {
-        position: absolute;
-        top: 130%;
-        left: 0;
-        z-index: 60;
-        width: 250px;
-        max-width: 70vw;
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        z-index: 1000;
+        width: 85vw;
+        max-width: 320px;
+        max-height: 70vh;
+        overflow-y: auto;
         background: #1b1b1f;
         border: 1px solid rgba(255,255,255,0.15);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 12.5px;
-        line-height: 1.4;
+        border-radius: 12px;
+        padding: 16px 16px 14px 16px;
+        font-size: 13px;
+        line-height: 1.5;
         color: #d5d5d5;
         font-weight: 400;
-        box-shadow: 0 6px 16px rgba(0,0,0,0.45);
+        box-shadow: 0 10px 30px rgba(0,0,0,0.55);
+    }
+    /* Backdrop redup di belakang modal, biar fokus & jelas ini overlay
+       (bukan bagian dari isi halaman) -- ditutup lagi dengan tap ikon ℹ️. */
+    .disclaimer-details[open]::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 999;
+    }
+    .disclaimer-popup::after {
+        content: "Tap ikon ℹ️ lagi buat tutup";
+        display: block;
+        margin-top: 10px;
+        font-size: 11px;
+        color: #888;
+        font-style: italic;
     }
 
     /* Label "Top 50 Losers" -- di layar sempit/mobile kolom gainer & loser
