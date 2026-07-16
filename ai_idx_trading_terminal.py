@@ -535,7 +535,7 @@ st.markdown("""
        kecilkan supaya halaman pembuka nggak keliatan "ngambang". */
     div[data-testid="stAppViewBlockContainer"],
     .block-container {
-        padding-top: 6.6rem !important; /* ruang buat header (2 baris nav + caption update di bawah nama app) yang sekarang fixed */
+        padding-top: 4.6rem !important; /* dirapetin -- sebelumnya kejauhan dari header ke search bar */
         padding-bottom: 3.6rem !important; /* ruang buat bottom bar Komunitas yang fixed (sekarang lebih tipis) */
     }
 
@@ -1808,6 +1808,87 @@ status = get_user_status(identifier, user_db)
 # guard di bawah), jadi app utama tetap jalan normal tanpa error.
 supabase_client = get_supabase_client()
 
+# ---- State awal buat data hasil scan (dipindah ke sini, sebelum header,
+# karena fragment caption "Update terakhir" di header -- lihat
+# render_header_brand_block() -- sekarang butuh manggil ensure_scanned()
+# juga, biar datanya langsung siap begitu header pertama kali dirender,
+# gak perlu nunggu sampai render_top_panel() di body Dashboard jalan.) ----
+if "scan_df" not in st.session_state:
+    st.session_state.scan_df = None
+if "last_updated" not in st.session_state:
+    st.session_state.last_updated = None
+if "last_updated_epoch" not in st.session_state:
+    st.session_state.last_updated_epoch = None
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _load_central_scan():
+    """Baca hasil scan yang sudah disiapkan 'petugas scan' (scan_worker.py,
+    dijalankan berkala lewat GitHub Actions) dari Supabase -- BUKAN scan
+    sendiri. Ini yang bikin app cepat dibuka biarpun banyak user
+    bersamaan, karena tidak ada yang download+hitung data saham sendiri
+    tiap buka app. Return (DataFrame, waktu_update) atau (None, None)
+    kalau data pusat belum ada / gagal diambil.
+
+    PERBAIKAN (skala 1000+ user): dibungkus @st.cache_data(ttl=900) --
+    cache ini DIBAGI ke SEMUA user di server yang sama (bukan per-session
+    seperti st.session_state). Jadi walau ribuan user klik apapun
+    bersamaan, cuma ADA MAKSIMAL 1 request nyata ke Supabase tiap 15
+    menit (disamakan dengan cadence scan_worker.py) -- user lainnya
+    otomatis dapat data dari cache RAM server, nyaris instan, tanpa
+    network call sendiri-sendiri."""
+    if not supabase_client:
+        return None, None
+    try:
+        res = supabase_client.table("scan_results").select("*").eq("id", 1).execute()
+        rows = res.data or []
+        if not rows:
+            return None, None
+        records = rows[0].get("data") or []
+        if not records:
+            return None, None
+        df = pd.DataFrame(records)
+        updated_dt = None
+        updated_raw = rows[0].get("updated_at")
+        if updated_raw:
+            try:
+                updated_dt = datetime.fromisoformat(updated_raw.replace("Z", "+00:00"))
+                updated_dt = (updated_dt + timedelta(hours=7)).replace(tzinfo=None)
+            except Exception:
+                updated_dt = None
+        return df, updated_dt
+    except Exception:
+        return None, None
+
+
+def ensure_scanned(force=False):
+    """Dipakai oleh tombol aksi & panel atas. App TIDAK PERNAH scan
+    sendiri lagi -- cukup baca hasil scan TERPUSAT dari Supabase (diisi
+    scan_worker.py tiap 15 menit lewat GitHub Actions, HANYA jam bursa).
+    Kalau data pusat kosong total (baru pertama kali setup, belum pernah
+    ada scan sukses sekalipun), df yang dikembalikan kosong -- banner di
+    render_top_panel() yang menjelaskan situasinya ke user, BUKAN dengan
+    scan langsung (biar app tetap ringan buat semua orang).
+
+    PERBAIKAN (skala 1000+ user): sekarang SELALU panggil
+    _load_central_scan() langsung -- tidak lagi menyimpan salinan manual
+    di st.session_state per-user. Karena _load_central_scan() sendiri
+    sudah di-cache (ttl=900, dibagi ke semua user), pemanggilan ini
+    nyaris gratis (baca cache RAM) kecuali cache-nya baru saja expired.
+    Efeknya: Scan / Portofolio / Top Gainer-Loser semua otomatis baca
+    sumber data yang SAMA & SINKRON, dan otomatis "ter-update" begitu
+    cache di-refresh oleh siapapun user yang kebetulan jadi pemicu
+    pertama setelah 15 menit -- tanpa perlu tombol refresh manual.
+    `force` dipertahankan untuk kompatibilitas tapi sekarang tidak
+    berefek berbeda, karena tidak ada lagi cache manual di session_state
+    yang perlu "dipaksa" dilewati."""
+    df_central, updated_dt = _load_central_scan()
+    st.session_state.scan_df = df_central if df_central is not None else pd.DataFrame()
+    st.session_state.last_updated = updated_dt
+    st.session_state.last_updated_epoch = time.time()
+    return st.session_state.scan_df
+
+
 def _go_to_dashboard():
     """Reset semua state navigasi & query param, balik lurus ke Dashboard
     utama -- dipakai tombol logo rumah (home) di header."""
@@ -1872,7 +1953,16 @@ def render_header_brand_block():
     jadi "Data terakhir saat bursa tutup" walau di luar jam bursa) --
     ikon jam 🕒 dipertahankan. Kalau data belum pernah ke-scan sama
     sekali, caption-nya tidak nampilkan apa-apa dulu (biar gak dobel sama
-    info "sedang menyiapkan data" yang sudah ada di body Dashboard)."""
+    info "sedang menyiapkan data" yang sudah ada di body Dashboard).
+
+    PERBAIKAN: fragment ini sekarang manggil ensure_scanned() sendiri
+    (bukan cuma numpang baca session_state yang diisi render_top_panel())
+    -- soalnya ensure_scanned() cuma baca cache bersama yang sudah
+    di-cache (ttl=900, nyaris gratis), dan header dirender DULUAN
+    sebelum render_top_panel(). Tanpa ini, caption sempat kosong lama
+    (sampai 15 menit) di run pertama karena fragment ini & fragment
+    render_top_panel() jalan independen dengan jadwal masing-masing."""
+    ensure_scanned()
     updated_dt = st.session_state.get("last_updated")
     caption_html = ""
     if updated_dt is not None:
@@ -1993,13 +2083,28 @@ with st.container(key="header_status_bar"):
         with icon_cols[0]:
             if st.button("HOME", key="home_btn", use_container_width=True, help="Home"):
                 _go_to_dashboard()
+        # PERBAIKAN (bug: dropdown kategori gak nutup sendiri): sama kayak
+        # popover profil di atas -- st.popover bawaan Streamlit TIDAK
+        # otomatis nutup diri kalau tombol DI DALAMNYA diklik lalu trigger
+        # st.rerun(). Popovernya kebuka lagi setelah rerun/pindah halaman
+        # karena widget key-nya sama persis. Solusinya sama: tiap kategori
+        # (Scanner/Trading/Bandar/Alert) dikasih "seed" counter sendiri di
+        # session_state yang di-+1 tiap kali ada item di dalamnya diklik,
+        # dan seed itu dipakai jadi bagian dari key popovernya -- jadi
+        # Streamlit nganggep popover itu widget baru (state awal =
+        # tertutup) begitu user pindah ke panel yang dipilih.
         for i, (cat_name, cat_items) in enumerate(NAV_CATEGORIES):
+            _seed_state_key = f"nav_popover_seed_{i}"
+            if _seed_state_key not in st.session_state:
+                st.session_state[_seed_state_key] = 0
+            _cat_popover_key = f"nav_popover_{i}_{st.session_state[_seed_state_key]}"
             with icon_cols[i + 1]:
-                with st.popover(cat_name.upper(), use_container_width=True, help=cat_name):
+                with st.popover(cat_name.upper(), use_container_width=True, help=cat_name, key=_cat_popover_key):
                     st.caption(cat_name)
                     for panel_key, panel_label in cat_items:
                         if st.button(panel_label, use_container_width=True, key=f"nav_{panel_key}"):
                             st.session_state.active_panel = panel_key
+                            st.session_state[_seed_state_key] += 1
                             st.rerun()
 
 # ---- Banner soft: sisa masa aktif <=3 hari ----
@@ -2477,82 +2582,10 @@ def render_stock_search_bar(form_key):
 # Kelola Pelanggan, dan panel fitur (Scan/Bandar/dll) TIDAK lagi menampilkan
 # search bar.
 
-# ---- State awal ----
-if "scan_df" not in st.session_state:
-    st.session_state.scan_df = None
-if "last_updated" not in st.session_state:
-    st.session_state.last_updated = None
-if "last_updated_epoch" not in st.session_state:
-    st.session_state.last_updated_epoch = None
-
-
-@st.cache_data(ttl=900, show_spinner=False)
-def _load_central_scan():
-    """Baca hasil scan yang sudah disiapkan 'petugas scan' (scan_worker.py,
-    dijalankan berkala lewat GitHub Actions) dari Supabase -- BUKAN scan
-    sendiri. Ini yang bikin app cepat dibuka biarpun banyak user
-    bersamaan, karena tidak ada yang download+hitung data saham sendiri
-    tiap buka app. Return (DataFrame, waktu_update) atau (None, None)
-    kalau data pusat belum ada / gagal diambil.
-
-    PERBAIKAN (skala 1000+ user): dibungkus @st.cache_data(ttl=900) --
-    cache ini DIBAGI ke SEMUA user di server yang sama (bukan per-session
-    seperti st.session_state). Jadi walau ribuan user klik apapun
-    bersamaan, cuma ADA MAKSIMAL 1 request nyata ke Supabase tiap 15
-    menit (disamakan dengan cadence scan_worker.py) -- user lainnya
-    otomatis dapat data dari cache RAM server, nyaris instan, tanpa
-    network call sendiri-sendiri."""
-    if not supabase_client:
-        return None, None
-    try:
-        res = supabase_client.table("scan_results").select("*").eq("id", 1).execute()
-        rows = res.data or []
-        if not rows:
-            return None, None
-        records = rows[0].get("data") or []
-        if not records:
-            return None, None
-        df = pd.DataFrame(records)
-        updated_dt = None
-        updated_raw = rows[0].get("updated_at")
-        if updated_raw:
-            try:
-                updated_dt = datetime.fromisoformat(updated_raw.replace("Z", "+00:00"))
-                updated_dt = (updated_dt + timedelta(hours=7)).replace(tzinfo=None)
-            except Exception:
-                updated_dt = None
-        return df, updated_dt
-    except Exception:
-        return None, None
-
-
-def ensure_scanned(force=False):
-    """Dipakai oleh tombol aksi & panel atas. App TIDAK PERNAH scan
-    sendiri lagi -- cukup baca hasil scan TERPUSAT dari Supabase (diisi
-    scan_worker.py tiap 15 menit lewat GitHub Actions, HANYA jam bursa).
-    Kalau data pusat kosong total (baru pertama kali setup, belum pernah
-    ada scan sukses sekalipun), df yang dikembalikan kosong -- banner di
-    render_top_panel() yang menjelaskan situasinya ke user, BUKAN dengan
-    scan langsung (biar app tetap ringan buat semua orang).
-
-    PERBAIKAN (skala 1000+ user): sekarang SELALU panggil
-    _load_central_scan() langsung -- tidak lagi menyimpan salinan manual
-    di st.session_state per-user. Karena _load_central_scan() sendiri
-    sudah di-cache (ttl=900, dibagi ke semua user), pemanggilan ini
-    nyaris gratis (baca cache RAM) kecuali cache-nya baru saja expired.
-    Efeknya: Scan / Portofolio / Top Gainer-Loser semua otomatis baca
-    sumber data yang SAMA & SINKRON, dan otomatis "ter-update" begitu
-    cache di-refresh oleh siapapun user yang kebetulan jadi pemicu
-    pertama setelah 15 menit -- tanpa perlu tombol refresh manual.
-    `force` dipertahankan untuk kompatibilitas tapi sekarang tidak
-    berefek berbeda, karena tidak ada lagi cache manual di session_state
-    yang perlu "dipaksa" dilewati."""
-    df_central, updated_dt = _load_central_scan()
-    st.session_state.scan_df = df_central if df_central is not None else pd.DataFrame()
-    st.session_state.last_updated = updated_dt
-    st.session_state.last_updated_epoch = time.time()
-    return st.session_state.scan_df
-
+# ---- State awal (scan_df/last_updated) & fungsi ensure_scanned/
+# _load_central_scan dipindah ke ATAS file, sebelum header -- lihat
+# dekat definisi supabase_client -- karena sekarang fragment caption
+# header (render_header_brand_block) juga butuh manggil ensure_scanned().
 
 def render_portfolio_page(user_db, identifier, display_name):
     """Halaman 'Portofolio Saya' — daftar saham pribadi user, dengan data
