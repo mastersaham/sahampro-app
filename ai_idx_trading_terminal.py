@@ -528,7 +528,7 @@ st.markdown("""
        kecilkan supaya halaman pembuka nggak keliatan "ngambang". */
     div[data-testid="stAppViewBlockContainer"],
     .block-container {
-        padding-top: 5.6rem !important; /* ruang buat header (2 baris) yang sekarang fixed */
+        padding-top: 6rem !important; /* ruang buat header (2 baris + label nav) yang sekarang fixed */
         padding-bottom: 5rem !important; /* ruang buat bottom bar Komunitas yang fixed */
     }
 
@@ -787,12 +787,15 @@ st.markdown("""
     }
     /* baris 2: nav -- semua icon-only, transparan & nyatu sama strip
        oranye (gaya sama kayak bar "Komunitas" di bawah), ramping/tipis,
-       bukan kotak hitam gendut kayak sebelumnya */
+       bukan kotak hitam gendut kayak sebelumnya.
+       PERBAIKAN: border-top ditambahkan jadi garis pemisah tipis antara
+       baris 1 (brand/portofolio/notif/avatar) dan baris 2 (nav menu) --
+       padding-top dinaikkan dikit biar ada jarak napas di atas garis. */
     .st-key-nav_icon_row {
         background: transparent;
-        padding: 2px 10px 4px 10px;
-        margin: 0 -12px -4px -12px;
-        border-top: none;
+        padding: 6px 10px 4px 10px;
+        margin: 4px -12px -4px -12px;
+        border-top: 1px solid rgba(26,15,0,0.18);
     }
     .st-key-nav_icon_row div.stButton > button,
     .st-key-nav_icon_row div[data-testid="stPopover"] button {
@@ -803,9 +806,9 @@ st.markdown("""
         border-radius: 8px !important;
         border: none !important;
         box-shadow: none !important;
-        padding: 0.25em 0.2em !important;
+        padding: 0.15em 0.2em 0 0.2em !important;
         min-width: 0 !important;
-        height: 32px !important;
+        height: 26px !important;
         line-height: 1 !important;
     }
     .st-key-nav_icon_row div.stButton > button:hover,
@@ -817,6 +820,22 @@ st.markdown("""
     .st-key-nav_icon_row div[data-testid="stHorizontalBlock"] > div:first-child div.stButton > button {
         font-size: 17px !important;
         background: transparent !important;
+    }
+    /* label kecil & tipis di bawah tiap ikon nav (gaya bottom-nav-bar
+       minimalis: ikon di atas, teks singkat tipis di bawahnya) */
+    .nav-icon-label {
+        display: block;
+        text-align: center;
+        font-size: 9px;
+        font-weight: 300;
+        letter-spacing: 0.2px;
+        color: #1a0f00;
+        opacity: 0.72;
+        line-height: 1;
+        margin-top: 1px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
     /* isi popover kategori (sub-menu): tombol biasa, full width, rapi */
     div[data-testid="stPopoverBody"] div.stButton > button {
@@ -1739,6 +1758,7 @@ with st.container(key="header_status_bar"):
         with icon_cols[0]:
             if st.button("🏠", key="home_btn", use_container_width=True, help="Home"):
                 _go_to_dashboard()
+            st.markdown('<span class="nav-icon-label">Home</span>', unsafe_allow_html=True)
         for i, (cat_icon, cat_name, cat_items) in enumerate(NAV_CATEGORIES):
             with icon_cols[i + 1]:
                 with st.popover(cat_icon, use_container_width=True, help=cat_name):
@@ -1747,6 +1767,7 @@ with st.container(key="header_status_bar"):
                         if st.button(panel_label, use_container_width=True, key=f"nav_{panel_key}"):
                             st.session_state.active_panel = panel_key
                             st.rerun()
+                st.markdown(f'<span class="nav-icon-label">{cat_name}</span>', unsafe_allow_html=True)
 
 # ---- Banner soft: sisa masa aktif <=3 hari ----
 # Sengaja diletakkan di sini (segera setelah header, SEBELUM percabangan
