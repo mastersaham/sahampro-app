@@ -778,6 +778,26 @@ st.markdown("""
        beberapa koneksi, hasilnya malah teks ligature mentah ("account_
        balance_wallet") yang kepanjangan & wrap jadi vertikal. Sekarang
        balik ke teks biasa, kapital semua, satu baris tanpa label dobel. */
+    /* PERBAIKAN: sebelumnya cuma diandalkan selector nth-child buat
+       transparansi tombol Portofolio (💼) & Home, tapi kotak gelap bawaan
+       Streamlit (background tombol "secondary") masih nongol di
+       beberapa versi -- selector nth-child kalah spesifik / gak konsisten
+       kena elemen yang tepat. Sekarang ditarget langsung lewat class
+       "st-key-<key>" yang otomatis ditempel Streamlit ke wrapper widget
+       yang punya parameter key=, jauh lebih pasti kena tombolnya. */
+    .st-key-portfolio_btn button,
+    .st-key-home_btn button {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .st-key-portfolio_btn button:hover,
+    .st-key-home_btn button:hover {
+        background: transparent !important;
+        background-color: transparent !important;
+        opacity: 0.7 !important;
+    }
     .st-key-header_status_bar div.stButton > button {
         background: transparent !important;
         border: none !important;
@@ -971,10 +991,59 @@ st.markdown("""
     /* label "Top 50 Gainers/Losers" -- diperbesar buat gantiin judul besar
        "Top Gainer/Loser" yang dihapus, jadi tetap ada penanda section jelas */
     .gainer-loser-label {
-        font-size: 19px;
+        font-size: 22px;
         font-weight: 800;
         color: #ffffff;
+        margin-bottom: 0;
+    }
+
+    /* Baris label + ikon info -- sejajar horizontal, ikon nempel di kanan
+       tulisan (bukan turun ke bawah kayak widget Streamlit biasa). */
+    .gainer-loser-label-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
         margin-bottom: 6px;
+    }
+
+    /* Ikon info + popup keterangan -- pure HTML <details>, transparan
+       total, tanpa border/kotak bawaan widget Streamlit. */
+    .disclaimer-details {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+    }
+    .disclaimer-details summary {
+        list-style: none;
+        cursor: pointer;
+        font-size: 20px;
+        line-height: 1;
+        background: transparent;
+        border: none;
+        padding: 0;
+        user-select: none;
+    }
+    .disclaimer-details summary::-webkit-details-marker,
+    .disclaimer-details summary::marker {
+        display: none;
+        content: "";
+    }
+    .disclaimer-popup {
+        position: absolute;
+        top: 130%;
+        left: 0;
+        z-index: 60;
+        width: 250px;
+        max-width: 70vw;
+        background: #1b1b1f;
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 10px;
+        padding: 10px 12px;
+        font-size: 12.5px;
+        line-height: 1.4;
+        color: #d5d5d5;
+        font-weight: 400;
+        box-shadow: 0 6px 16px rgba(0,0,0,0.45);
     }
 
     /* Label "Top 50 Losers" -- di layar sempit/mobile kolom gainer & loser
@@ -3247,16 +3316,19 @@ def render_top_panel():
 
         gcol, lcol = st.columns(2)
         with gcol:
-            label_col, info_col = st.columns([5, 1])
-            with label_col:
-                st.markdown('<div class="gainer-loser-label">Top 50 Gainers</div>', unsafe_allow_html=True)
-            with info_col:
-                with st.popover("ℹ️", use_container_width=False):
-                    st.markdown(
-                        "Label di bawah ini prediksi arah **KEDEPAN** berdasarkan trend "
-                        "& skor teknikal (bukan jaminan). Kondisi hari ini (bandar, "
-                        "fake breakout, dll) ada di halaman Detail Saham -- klik nama sahamnya."
-                    )
+            st.markdown(
+                '<div class="gainer-loser-label-row">'
+                '<span class="gainer-loser-label">Top 50 Gainers</span>'
+                '<details class="disclaimer-details">'
+                '<summary class="disclaimer-icon">ℹ️</summary>'
+                '<div class="disclaimer-popup">Label di bawah ini prediksi arah '
+                '<b>KEDEPAN</b> berdasarkan trend &amp; skor teknikal (bukan jaminan). '
+                'Kondisi hari ini (bandar, fake breakout, dll) ada di halaman Detail '
+                'Saham -- klik nama sahamnya.</div>'
+                '</details>'
+                '</div>',
+                unsafe_allow_html=True,
+            )
             st.markdown(_render_scroll_list(gainers), unsafe_allow_html=True)
         with lcol:
             st.markdown('<div class="gainer-loser-label gainer-loser-label-losers">Top 50 Losers</div>', unsafe_allow_html=True)
