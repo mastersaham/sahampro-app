@@ -539,6 +539,15 @@ st.markdown("""
         padding-bottom: 3.6rem !important; /* ruang buat bottom bar Komunitas yang fixed (sekarang lebih tipis) */
     }
 
+    /* PERBAIKAN: st.subheader() bawaan Streamlit (h3) kegedean menurut
+       user -- dikecilkan secara GLOBAL (semua halaman, termasuk Detail
+       Saham, Screener, Bandar, dst pakai elemen yang sama, jadi diseragamkan
+       satu ukuran biar konsisten). */
+    div[data-testid="stMarkdownContainer"] h3 {
+        font-size: 1.05rem !important;
+        line-height: 1.4 !important;
+    }
+
     /* ---------------------------------------------------------
        TABEL HASIL SCAN — header KAPITAL, rata tengah, lebih besar
     --------------------------------------------------------- */
@@ -774,7 +783,7 @@ st.markdown("""
         font-size: 19px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
-        color: #1a0f00;
+        color: #d32f2f;
         line-height: 19px;
         margin-top: -2px;
         white-space: nowrap;
@@ -2134,7 +2143,6 @@ with st.container(key="header_status_bar"):
             _cat_popover_key = f"nav_popover_{i}_{st.session_state[_seed_state_key]}"
             with icon_cols[i + 1]:
                 with st.popover(cat_name.upper(), use_container_width=True, help=cat_name, key=_cat_popover_key):
-                    st.caption(cat_name)
                     for panel_key, panel_label in cat_items:
                         if st.button(panel_label, use_container_width=True, key=f"nav_{panel_key}"):
                             st.session_state.active_panel = panel_key
@@ -2259,6 +2267,13 @@ def render_html_table(df):
     # dengan .gain-up/.gain-down yang sudah dipakai di Portofolio, Top
     # Gainer/Loser, dan tabel histori harga saham.
     PCT_GAIN_LOSS_COLS = {"change_pct", "week_change_pct"}
+    # Kolom harga (rupiah) -- dulu tampil mentah (mis. "1250.0"), sekarang
+    # dirapikan pakai format_harga() (titik ribuan, tanpa desimal), sama
+    # kayak yang sudah dipakai di Top Gainer/Loser, Portofolio, dll.
+    PRICE_COLS = {"price", "entry", "tp", "sl"}
+    # Kolom "drop" (dipakai di Swing Alert) -- persentase turun dari swing
+    # high, ditampilkan pakai tanda minus + warna merah (gain-down), sama
+    # gaya kayak kolom persen lain.
 
     df_fmt = df.copy()
     for col in df_fmt.columns:
@@ -2284,6 +2299,11 @@ def render_html_table(df):
                 _v = row[col]
                 _cls = "gain-up" if _v >= 0 else "gain-down"
                 cells += f'<td><span class="{_cls}">{_v:+.2f}%</span></td>'
+            elif col in PRICE_COLS and pd.notna(row[col]):
+                cells += f"<td>{format_harga(row[col])}</td>"
+            elif col == "drop" and pd.notna(row[col]):
+                _d = abs(row[col])
+                cells += f'<td><span class="gain-down">-{_d:.1f}%</span></td>'
             else:
                 cells += f"<td>{row[col]}</td>"
         # Lencana buat 3 peringkat teratas (tabel sudah terurut dari skor
@@ -3622,7 +3642,6 @@ if st.session_state.active_panel is None:
 else:
     # ===================== HALAMAN: FITUR =====================
     _panel = st.session_state.active_panel
-    st.divider()
 
     # ---- SCAN MARKET : tabel penuh, semua saham, semua metrik ----
     if _panel == "scan":
