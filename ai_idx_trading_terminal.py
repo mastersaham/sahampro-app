@@ -977,6 +977,13 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
+    /* Label "Top 50 Losers" -- di layar sempit/mobile kolom gainer & loser
+       ke-stack vertikal (gcol lalu lcol), jadi butuh jarak ekstra di atas
+       biar ga nempel meper sama list gainer di atasnya. */
+    .gainer-loser-label-losers {
+        margin-top: 20px;
+    }
+
     .badge-buy { background: rgba(0,224,140,0.15); color: #00e08c; }
     .badge-hold { background: rgba(255,152,0,0.15); color: #ff9800; }
     .badge-neutral { background: rgba(255,193,7,0.15); color: #ffc107; }
@@ -3238,17 +3245,21 @@ def render_top_panel():
             )
             return f'<div class="scroll-list">{items_html}</div>'
 
-        st.caption(
-            "🔮 Label di bawah ini prediksi arah KEDEPAN berdasarkan trend "
-            "& skor teknikal (bukan jaminan). Kondisi hari ini (bandar, "
-            "fake breakout, dll) ada di halaman Detail Saham -- klik nama sahamnya."
-        )
         gcol, lcol = st.columns(2)
         with gcol:
-            st.markdown('<div class="gainer-loser-label">Top 50 Gainers</div>', unsafe_allow_html=True)
+            label_col, info_col = st.columns([5, 1])
+            with label_col:
+                st.markdown('<div class="gainer-loser-label">Top 50 Gainers</div>', unsafe_allow_html=True)
+            with info_col:
+                with st.popover("ℹ️", use_container_width=False):
+                    st.markdown(
+                        "Label di bawah ini prediksi arah **KEDEPAN** berdasarkan trend "
+                        "& skor teknikal (bukan jaminan). Kondisi hari ini (bandar, "
+                        "fake breakout, dll) ada di halaman Detail Saham -- klik nama sahamnya."
+                    )
             st.markdown(_render_scroll_list(gainers), unsafe_allow_html=True)
         with lcol:
-            st.markdown('<div class="gainer-loser-label">Top 50 Losers</div>', unsafe_allow_html=True)
+            st.markdown('<div class="gainer-loser-label gainer-loser-label-losers">Top 50 Losers</div>', unsafe_allow_html=True)
             st.markdown(_render_scroll_list(losers), unsafe_allow_html=True)
 
 
