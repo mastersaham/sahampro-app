@@ -27,6 +27,12 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
+# Dipindah ke sini (sebelumnya ada di dekat REFRESH_SECONDS lama, jauh di
+# bawah) karena sekarang caption "Update terakhir" dirender di header
+# lewat fragment sendiri (render_header_update_caption), dan fragment itu
+# butuh REFRESH_SECONDS sudah didefinisikan duluan sebelum header dipanggil.
+REFRESH_SECONDS = 900
+
 # ============================================================
 #  CONFIG
 # ============================================================
@@ -673,27 +679,6 @@ st.markdown("""
     }
     .update-strip b { color: #f3f2ef; }
 
-    /* Tombol "Back" (dulu "Kembali") di berbagai halaman -- disamain
-       gayanya kayak tombol popover: solid oranye flat, tanpa gradient
-       & tanpa glow/shadow mengambang kayak tombol aksi umum lainnya. */
-    .st-key-back_from_portfolio button,
-    .st-key-back_from_customer_panel button,
-    .st-key-back_from_stock_detail button,
-    .st-key-back_to_dashboard_btn button,
-    .st-key-back_to_dashboard_btn_bottom button {
-        background: #ff8c00 !important;
-        box-shadow: none !important;
-    }
-    .st-key-back_from_portfolio button:hover,
-    .st-key-back_from_customer_panel button:hover,
-    .st-key-back_from_stock_detail button:hover,
-    .st-key-back_to_dashboard_btn button:hover,
-    .st-key-back_to_dashboard_btn_bottom button:hover {
-        background: #e67e00 !important;
-        box-shadow: none !important;
-        transform: none !important;
-    }
-
     /* action buttons — pil oranye-kuning cerah, mengambang dengan glow */
     div.stButton > button {
         width: 100%;
@@ -712,6 +697,19 @@ st.markdown("""
         color: #241300;
     }
     div.stButton > button:active { transform: translateY(-1px); }
+
+    /* Tombol "🗑️ Hapus" di halaman Portofolio -- disamain jadi solid
+       oranye flat (bukan gradasi kayak tombol aksi umum), senada gaya
+       tombol solid lain di app ini. */
+    .st-key-delete_portfolio_stock_btn button {
+        background: #ff8c00 !important;
+        box-shadow: none !important;
+    }
+    .st-key-delete_portfolio_stock_btn button:hover {
+        background: #e67e00 !important;
+        box-shadow: none !important;
+        transform: none !important;
+    }
 
     .card {
         background: rgba(255,255,255,0.045);
@@ -765,24 +763,60 @@ st.markdown("""
     .st-key-header_status_bar div[data-testid="stColumn"] {
         min-width: 0 !important;
     }
+    /* nama aplikasi + caption "Update terakhir" -- ditumpuk vertikal
+       dalam SATU ruang yang sama (bukan nambah ruang baru): kolom
+       pertama header (nth-child(1)) rapatkan jaraknya, karena secara
+       default tiap elemen Streamlit (nama app & caption fragment) punya
+       gap vertikal bawaan yang bikin dua baris ini kelihatan renggang. */
+    .st-key-header_status_bar div[data-testid="column"]:nth-child(1),
+    .st-key-header_status_bar div[data-testid="stColumn"]:nth-child(1) {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        gap: 0 !important;
+    }
+    .st-key-header_status_bar div[data-testid="column"]:nth-child(1) div[data-testid="stVerticalBlock"],
+    .st-key-header_status_bar div[data-testid="stColumn"]:nth-child(1) div[data-testid="stVerticalBlock"] {
+        gap: 0 !important;
+    }
+    .st-key-header_status_bar div[data-testid="column"]:nth-child(1) div[data-testid="stMarkdown"],
+    .st-key-header_status_bar div[data-testid="stColumn"]:nth-child(1) div[data-testid="stMarkdown"] {
+        margin: 0 !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+    }
     /* nama aplikasi -- ambil sisa ruang kolom pertama, teks gelap biar
        kontras di atas latar oranye.
        PERBAIKAN: dibesarkan (21px -> 30px, ~43% lebih besar) + uppercase
-       biar lebih menonjol, tapi line-height sengaja ditahan di 34px
-       (sama kayak tinggi avatar/tombol row 1) supaya baris header TIDAK
-       ikut melebar/lebih tinggi -- teks tetap center secara vertikal
-       dalam ruang yang sama. */
+       biar lebih menonjol. line-height dulu ditahan 34px pas nama app
+       sendirian di baris ini -- sekarang ada caption update di bawahnya,
+       jadi line-height dikecilkan biar dua baris pas dalam tinggi row 1
+       yang sama (bukan melebar ke bawah). */
     .app_brand_name {
         font-weight: 800;
         font-size: 20px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
         color: #1a0f00;
-        line-height: 34px;
+        line-height: 22px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
     }
+    /* caption "🕒 Update terakhir: ..." -- dulu berdiri sendiri di
+       bawah search bar (class .update-strip), sekarang ditumpuk di
+       bawah nama app di header, jadi lebih kecil & rapat. */
+    .app_update_caption {
+        font-size: 10.5px;
+        font-weight: 600;
+        color: #3a2200;
+        opacity: 0.85;
+        line-height: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .app_update_caption b { color: #1a0f00; }
     /* tombol ikon (Portofolio) di baris 1 -- font emoji dibesarin dikit
        biar sebanding sama ikon bell/avatar di sebelahnya, tetep transparan
        tanpa kotak, senada sama .st-key-header_status_bar div.stButton */
@@ -1843,12 +1877,36 @@ def _get_initials(name):
         return parts[0][:2].upper()
     return (parts[0][0] + parts[-1][0]).upper()
 
+@st.fragment(run_every=REFRESH_SECONDS)
+def render_header_update_caption():
+    """Caption kecil "🕒 Update terakhir: ..." yang ditumpuk di bawah nama
+    app di header (dulu berdiri sendiri sebagai .update-strip di bawah
+    search bar Dashboard). Dipisah jadi fragment sendiri (bukan cuma
+    st.markdown biasa) supaya jamnya ikut auto-refresh tiap REFRESH_SECONDS
+    sama seperti render_top_panel(), walau posisinya sekarang di header
+    yang dirender duluan/sekali di awal script.
+    Label SENGAJA selalu "Update terakhir" (tidak lagi berubah jadi "Data
+    terakhir saat bursa tutup" walau di luar jam bursa) -- ikon jam 🕒
+    dipertahankan sesuai versi lama. Kalau data belum pernah ke-scan sama
+    sekali, caption ini tidak nampilkan apa-apa (biar gak dobel sama info
+    "sedang menyiapkan data" yang sudah ada di body halaman Dashboard)."""
+    updated_dt = st.session_state.get("last_updated")
+    if updated_dt is not None:
+        last_upd_str = updated_dt.strftime("%H:%M, %d %b %Y")
+        st.markdown(
+            f'<div class="app_update_caption">🕒 Update terakhir: <b>{last_upd_str}</b> WIB</div>',
+            unsafe_allow_html=True,
+        )
+
+
 with st.container(key="header_status_bar"):
-    # ---- baris 1: nama app (sisa ruang) + portofolio + notif + avatar ----
+    # ---- baris 1: nama app + caption update (sisa ruang, ditumpuk) +
+    # portofolio + notif + avatar ----
     col_brand, col_portfolio, col_notif, col_avatar = st.columns([2.6, 0.5, 0.55, 0.7])
 
     with col_brand:
         st.markdown('<div class="app_brand_name">Syariah Signal</div>', unsafe_allow_html=True)
+        render_header_update_caption()
 
     with col_portfolio:
         if is_subscriber:
@@ -2004,8 +2062,8 @@ with st.container(key="bottom_komunitas_bar"):
 # (scan_worker.py -> Supabase) tiap ~15 menit; user tinggal pakai data itu
 # tanpa perlu ngatur atau memicu refresh sendiri. Panel Top Gainer/Loser
 # tetap baca ulang data terbaru tiap 15 menit lewat st.fragment (diam-diam,
-# tanpa UI/countdown).
-REFRESH_SECONDS = 900
+# tanpa UI/countdown). (REFRESH_SECONDS sekarang didefinisikan di atas,
+# dekat st.set_page_config, biar bisa dipakai fragment caption header juga.)
 manual_refresh_clicked = False
 
 # ============================================================
@@ -2515,9 +2573,6 @@ def render_portfolio_page(user_db, identifier, display_name):
     ISSI, dan data dasar SAJA (harga + %harian) untuk saham non-syariah,
     tanpa sinyal/rekomendasi apa pun untuk yang non-syariah."""
     st.markdown(f"### 📌 Portofolio Saya — {display_name}")
-    if st.button("← Back", key="back_from_portfolio"):
-        st.session_state["show_portfolio"] = False
-        st.rerun()
 
     st.markdown(
         '<div class="auth-caption">Tambahkan kode saham yang kamu pantau. '
@@ -2623,7 +2678,7 @@ def render_portfolio_page(user_db, identifier, display_name):
             "Pilih saham", portfolio, label_visibility="collapsed", key="portfolio_remove_select"
         )
     with col_del_btn:
-        if st.button("🗑️ Hapus", use_container_width=True):
+        if st.button("🗑️ Hapus", use_container_width=True, key="delete_portfolio_stock_btn"):
             remove_from_portfolio(user_db, identifier, code_to_remove)
             st.rerun()
 
@@ -2640,9 +2695,6 @@ def render_customer_panel(user_db):
     dipakai selama Stripe belum live / untuk koreksi manual selagi app
     belum dibuka ke umum."""
     st.markdown("### 🗂️ Kelola Pelanggan")
-    if st.button("← Back", key="back_from_customer_panel"):
-        st.session_state["show_customer_panel"] = False
-        st.rerun()
 
     st.markdown("##### Aktivasi / Perpanjang Manual")
     semua_username = sorted(
@@ -2920,15 +2972,6 @@ def render_stock_detail_page(ticker_raw):
     ticker_no_jk = str(ticker_raw).upper().strip().replace(".JK", "")
     ticker_jk = f"{ticker_no_jk}.JK"
 
-    if st.button("⬅ Back", key="back_from_stock_detail"):
-        # Cuma hapus query param "?stock=..." -- state navigasi lain
-        # (show_portfolio/show_customer_panel/active_panel) SENGAJA
-        # dibiarkan apa adanya, supaya tombol ini balik ke halaman ASAL
-        # user klik saham tadi (Dashboard/Portofolio/Scan Market/dll),
-        # bukan selalu dipaksa balik ke Dashboard. Kalau mau langsung ke
-        # Dashboard dari halaman manapun, pakai logo 🏠 di header.
-        st.query_params.pop("stock", None)
-        st.rerun()
     render_stock_search_bar("stock_detail_search_form")
 
     df_scan = st.session_state.get("scan_df")
@@ -3298,14 +3341,10 @@ def render_top_panel():
                 )
             else:
                 st.warning(f"⏳ Data sedang diperbarui, mohon tunggu sebentar. (Terakhir: {last_upd_str} WIB)")
-        else:
-            label = "Update terakhir" if market_open else "Data terakhir saat bursa tutup"
-            st.markdown(
-                f'<div class="update-strip">'
-                f'<span>🕒 {label}: <b>{last_upd_str}</b> WIB</span>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+        # Kondisi normal (data segar) dulu nampilin banner "Update terakhir"
+        # di sini (.update-strip) -- sekarang sudah pindah ke header,
+        # ditumpuk di bawah nama app "Syariah Signal" (lihat
+        # render_header_update_caption()), jadi tidak dirender dobel di sini.
 
     df_scan_preview = st.session_state.scan_df
     if df_scan_preview is not None and not df_scan_preview.empty:
@@ -3529,9 +3568,6 @@ if st.session_state.active_panel is None:
 else:
     # ===================== HALAMAN: FITUR =====================
     _panel = st.session_state.active_panel
-    if st.button("⬅ Back", key="back_to_dashboard_btn"):
-        st.session_state.active_panel = None
-        st.rerun()
     st.divider()
 
     # ---- SCAN MARKET : tabel penuh, semua saham, semua metrik ----
@@ -3714,13 +3750,6 @@ else:
             "tombol Logout di menu profil kalau ingin mengakhiri sesi login di "
             "perangkat ini."
         )
-
-    # ---- Tombol kembali kedua di bawah, biar gak perlu scroll ke atas
-    # lagi di halaman yang tabelnya panjang. ----
-    st.divider()
-    if st.button("⬅ Back", key="back_to_dashboard_btn_bottom"):
-        st.session_state.active_panel = None
-        st.rerun()
 
 
 # ================== STRIPE WEBHOOK ==================
