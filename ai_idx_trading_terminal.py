@@ -1016,29 +1016,40 @@ st.markdown("""
         margin-bottom: 6px;
     }
 
-    /* Ikon info + popup keterangan -- pure HTML <details>, transparan
-       total, tanpa border/kotak bawaan widget Streamlit. */
-    .disclaimer-details {
-        position: relative;
-        display: inline-flex;
-        align-items: center;
+    /* Ikon info + popup keterangan -- pure HTML/CSS pakai "checkbox hack"
+       (bukan <details>, karena <details> cuma bisa ditutup lewat tap
+       summary-nya lagi -- masalahnya summary/ikonnya ketutup modal pas
+       lagi kebuka, jadi gak keklik. Checkbox hack ini kasih backdrop
+       transparan yang nutupin SELURUH layar dan bisa di-tap di mana aja
+       buat nutup, karena backdrop-nya juga <label> yang nyambung ke
+       checkbox yang sama.) */
+    .disclaimer-checkbox {
+        display: none;
     }
-    .disclaimer-details summary {
-        list-style: none;
+    .disclaimer-icon {
         cursor: pointer;
         font-size: 20px;
         line-height: 1;
-        background: transparent;
-        border: none;
-        padding: 0;
         user-select: none;
+        display: inline-flex;
+        align-items: center;
     }
-    .disclaimer-details summary::-webkit-details-marker,
-    .disclaimer-details summary::marker {
+    .disclaimer-backdrop {
         display: none;
-        content: "";
+    }
+    .disclaimer-checkbox:checked ~ .disclaimer-backdrop {
+        display: block;
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.55);
+        z-index: 999;
+        cursor: pointer;
     }
     .disclaimer-popup {
+        display: none;
+    }
+    .disclaimer-checkbox:checked ~ .disclaimer-popup {
+        display: block;
         position: fixed;
         top: 50%;
         left: 50%;
@@ -1058,17 +1069,7 @@ st.markdown("""
         font-weight: 400;
         box-shadow: 0 10px 30px rgba(0,0,0,0.55);
     }
-    /* Backdrop redup di belakang modal, biar fokus & jelas ini overlay
-       (bukan bagian dari isi halaman) -- ditutup lagi dengan tap ikon ℹ️. */
-    .disclaimer-details[open]::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.55);
-        z-index: 999;
-    }
-    .disclaimer-popup::after {
-        content: "Tap ikon ℹ️ lagi buat tutup";
+    .disclaimer-popup .disclaimer-hint {
         display: block;
         margin-top: 10px;
         font-size: 11px;
@@ -3349,13 +3350,15 @@ def render_top_panel():
             st.markdown(
                 '<div class="gainer-loser-label-row">'
                 '<span class="gainer-loser-label">Top 50 Gainers</span>'
-                '<details class="disclaimer-details">'
-                '<summary class="disclaimer-icon">ℹ️</summary>'
+                '<input type="checkbox" id="disclaimer-toggle" class="disclaimer-checkbox">'
+                '<label for="disclaimer-toggle" class="disclaimer-icon">ℹ️</label>'
+                '<label for="disclaimer-toggle" class="disclaimer-backdrop"></label>'
                 '<div class="disclaimer-popup">Label di bawah ini prediksi arah '
                 '<b>KEDEPAN</b> berdasarkan trend &amp; skor teknikal (bukan jaminan). '
                 'Kondisi hari ini (bandar, fake breakout, dll) ada di halaman Detail '
-                'Saham -- klik nama sahamnya.</div>'
-                '</details>'
+                'Saham -- klik nama sahamnya.'
+                '<span class="disclaimer-hint">Tap di luar kotak buat tutup</span>'
+                '</div>'
                 '</div>',
                 unsafe_allow_html=True,
             )
