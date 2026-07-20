@@ -14,12 +14,6 @@ from datetime import time as dtime_cls
 from streamlit_cookies_manager import EncryptedCookieManager
 from supabase import create_client
 
-# Fitur Community Feed (post, reaction, laporan spam) + notifikasi bell.
-# File-file ini harus ada satu folder sama file utama ini:
-#   community_feed.py, notifications.py
-from community_feed import render_community_feed, get_unread_post_count
-from notifications import render_notification_bell
-
 st.set_page_config(
     page_title="SYARIAH SIGNAL",
     page_icon="🚀",
@@ -536,7 +530,7 @@ st.markdown("""
     div[data-testid="stAppViewBlockContainer"],
     .block-container {
         padding-top: 4.6rem !important; /* dirapetin -- sebelumnya kejauhan dari header ke search bar */
-        padding-bottom: 3.6rem !important; /* ruang buat bottom bar Komunitas yang fixed (sekarang lebih tipis) */
+        padding-bottom: 1.5rem !important;
     }
 
     /* PERBAIKAN: samakan ukuran SEMUA st.subheader() (h3) -- Screener,
@@ -555,8 +549,7 @@ st.markdown("""
        kelihatan -- ada ruang kosong nganggur di atasnya yang perlu
        ditarik naik. Sebelumnya dipakai selector ":first-of-type" tapi
        itu TIDAK PERNAH KENA, karena header (.st-key-header_status_bar)
-       dan bottom bar Komunitas (.st-key-bottom_komunitas_bar) sama-sama
-       position:fixed -- posisinya lepas dari alur halaman, TAPI secara
+       posisinya fixed -- lepas dari alur halaman, TAPI secara
        DOM tetap dihitung sebagai "elemen pertama/kedua", jadi subheader
        fitur itu sebenarnya bukan first-of-type sungguhan. Sekarang
        ditarget LANGSUNG lewat container key "panel_header_tight" yang
@@ -1065,56 +1058,6 @@ st.markdown("""
         box-shadow: none !important;
         transform: none !important;
     }
-    /* bar Komunitas -- fixed nempel di bawah layar, selalu kelihatan.
-       PERBAIKAN: masih ketinggian -- tombolnya masih ikut padding gede
-       dari style tombol umum (div.stButton > button, 0.75em). Sekarang
-       padding container & tombol dikecilin biar bar-nya tipis.
-       Tombol (teks+ikon) sekarang RATA KIRI (bukan full-width lagi),
-       sisa ruang di kanan dipakai badge notif "X postingan belum
-       dibaca" (lihat .komunitas-unread-badge) -- kalau tidak ada post
-       baru, kolom kanan kosong, bar cuma polos kuning. */
-    .st-key-bottom_komunitas_bar {
-        position: fixed;
-        left: 0; right: 0; bottom: 0;
-        z-index: 998;
-        background: #ff8c00;
-        padding: 4px 16px calc(4px + env(safe-area-inset-bottom, 0px)) 16px;
-        box-shadow: 0 -10px 24px -10px rgba(0,0,0,0.55);
-    }
-    .st-key-bottom_komunitas_bar div.stButton > button {
-        background: transparent !important;
-        color: #1a0f00 !important;
-        box-shadow: none !important;
-        font-weight: 800 !important;
-        letter-spacing: 0.3px;
-        font-size: 13px !important;
-        padding: 0.3em 0.6em !important;
-        min-height: 0 !important;
-    }
-    .st-key-bottom_komunitas_bar div.stButton > button:hover {
-        transform: none !important;
-        opacity: 0.85;
-    }
-    .komunitas-unread-badge {
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        height: 100%;
-        min-height: 32px;
-        color: #1a0f00;
-        font-size: 12px;
-        font-weight: 700;
-        text-align: right;
-    }
-    .komunitas-unread-badge .dot {
-        display: inline-block;
-        width: 7px; height: 7px;
-        border-radius: 50%;
-        background: #ff2d2d;
-        margin-right: 6px;
-        box-shadow: 0 0 6px rgba(255,45,45,0.7);
-    }
-
     /* search bar cari saham -- pill minimalis, outline tipis, ikon nyatu
        di dalam bar (request: "kaya kolom search modern, ikon di dalam
        kolom", yang lama kesan jadul -- kotak putih solid + tombol
@@ -2047,10 +1990,11 @@ if not identifier:
 user_db = load_user_db()
 status = get_user_status(identifier, user_db)
 
-# Client Supabase dipakai bersama untuk Community Feed + Notifikasi.
-# Kalau secrets SUPABASE_URL/SUPABASE_SERVICE_KEY belum diisi, ini akan
-# None -- panel komunitas & bell notif otomatis nyembunyiin diri (lihat
-# guard di bawah), jadi app utama tetap jalan normal tanpa error.
+# Client Supabase dipakai bersama untuk data scan, broker summary, news,
+# fundamental, dst. Kalau secrets SUPABASE_URL/SUPABASE_SERVICE_KEY belum
+# diisi, ini akan None -- fitur yang butuh Supabase menampilkan pesan
+# sendiri (lihat masing-masing guard), jadi app utama tetap jalan normal
+# tanpa error.
 supabase_client = get_supabase_client()
 
 # ---- State awal buat data hasil scan (dipindah ke sini, sebelum header,
@@ -2227,8 +2171,8 @@ def render_header_brand_block():
 
 with st.container(key="header_status_bar"):
     # ---- baris 1: nama app + caption update (sisa ruang, ditumpuk) +
-    # portofolio + notif + avatar ----
-    col_brand, col_portfolio, col_notif, col_avatar = st.columns([2.6, 0.5, 0.55, 0.7])
+    # portofolio + avatar ----
+    col_brand, col_portfolio, col_avatar = st.columns([2.6, 0.5, 0.7])
 
     with col_brand:
         render_header_brand_block()
@@ -2238,10 +2182,6 @@ with st.container(key="header_status_bar"):
             if st.button("💼", key="portfolio_btn", use_container_width=True, help="Portofolio Saya"):
                 st.session_state["show_portfolio"] = True
                 st.rerun()
-
-    with col_notif:
-        if is_subscriber and supabase_client:
-            render_notification_bell(supabase_client, user_id=identifier)
 
     # ---- Avatar (emoji orang polos) = trigger dropdown (popover) berisi
     # status langganan, Privasi Akun & Logout. Status (owner/aktif/belum)
@@ -2390,40 +2330,6 @@ if status == "active":
 
 if status not in ("owner", "active"):
     st.stop()
-
-# ---- Bar Komunitas -- fixed nempel di bawah layar, tetap kelihatan di
-# halaman/panel manapun (posisinya di-pin lewat CSS position:fixed, jadi
-# taruh di sini -- di awal script, sebelum semua percabangan panel --
-# tidak masalah, dia akan tetap muncul di bawah pada tiap rerun).
-#
-# Tombol (ikon+teks) rata kiri, sisa ruang kanan dipakai badge notif
-# "X postingan belum dibaca" -- cuma muncul kalau ADA post baru dari
-# user lain sejak terakhir kali panel Community dibuka. Kalau tidak
-# ada, kolom kanan kosong (bar kuning polos saja). ----
-with st.container(key="bottom_komunitas_bar"):
-    _unread_count = get_unread_post_count(supabase_client, identifier) if supabase_client else 0
-    _bcol1, _bcol2 = st.columns([1, 2])
-    with _bcol1:
-        if st.button("💬 Komunitas", key="komunitas_bottom_btn"):
-            # PERBAIKAN BUG: sama seperti tombol nav popover di atas -- tanpa
-            # ini, klik "Komunitas" gak ngaruh kalau lagi di halaman
-            # Portofolio/Customer Panel, ATAU kalau lagi di halaman Detail
-            # Saham (query param "stock" perlu di-clear juga).
-            st.query_params.clear()
-            st.session_state["show_portfolio"] = False
-            st.session_state["show_customer_panel"] = False
-            st.session_state.active_panel = "community"
-            st.rerun()
-    with _bcol2:
-        if _unread_count > 0:
-            _unread_txt = (
-                "1 postingan belum dibaca" if _unread_count == 1
-                else f"{_unread_count} postingan belum dibaca"
-            )
-            st.markdown(
-                f'<div class="komunitas-unread-badge"><span class="dot"></span>{_unread_txt}</div>',
-                unsafe_allow_html=True,
-            )
 
 # ============================================================
 #  AUTO-REFRESH CONTROL (non-blocking, TIDAK nge-freeze seluruh halaman)
@@ -4274,19 +4180,6 @@ else:
             )
         else:
             _render_broker_summary_panel()
-
-    # ---- KOMUNITAS : community feed (post, reaction, laporan spam) + bell
-    # notif sudah dipasang di header. Panel ini hanya untuk user aktif/owner
-    # (sudah dijamin karena st.stop() di atas kalau bukan owner/active). ----
-    elif _panel == "community":
-        _tight_subheader("💬 Komunitas")
-        if not supabase_client:
-            st.warning(
-                "Community Feed belum aktif — SUPABASE_URL / SUPABASE_SERVICE_KEY "
-                "belum diisi di Secrets. Isi dulu supaya fitur ini jalan."
-            )
-        else:
-            render_community_feed(supabase_client, identifier, display_name)
 
     # ---- PRIVASI AKUN : dibuka dari dropdown nama profil di header,
     # bukan dari menu utama. Baru berisi info dasar akun -- kontrol
